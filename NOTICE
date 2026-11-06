@@ -1,0 +1,22 @@
+node-red-contrib-s7-rust
+Copyright 2026 Oriol Rius
+
+This product is licensed under the GNU Lesser General Public License, version 3 only
+(LGPL-3.0-only, see LICENSE), which supplements the GNU General Public License, version 3
+(see COPYING). The source code of the prebuilt binaries is in the Git tag of each release:
+https://github.com/oriolrius/node-red-contrib-s7-rust
+
+The S7comm and S7CommPlus implementations are Rust code. Parts of the S7CommPlus client
+follow the protocol handling of S7CommPlusDriver (Thomas Wiens, LGPL-3.0). Protocol
+descriptions used as references:
+  - Wireshark s7comm and s7comm-plus dissectors
+  - snap7 (Davide Nardella)
+  - nodes7 (plcpeople) and node-red-contrib-s7 (address syntax)
+  - S7CommPlusDriver (Thomas Wiens)
+
+The binary addon (bin/*/s7napi.node) statically links these Rust crates and their
+dependencies: napi, napi-derive, serde_json, chrono, socket2, rustls, ring, aes,
+flate2 (zlib-rs). Their licenses (MIT, Apache-2.0, ISC, BSD-style) apply to those parts.
+
+Siemens, SIMATIC, S7-1200, S7-1500, LOGO! and TIA Portal are trademarks of Siemens AG.
+This project is not affiliated with or endorsed by Siemens AG.

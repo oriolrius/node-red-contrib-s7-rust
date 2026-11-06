@@ -1,0 +1,21 @@
+<script type="text/html" data-help-name="s7rs-write">
+  <p>Writes S7 tags. Several tags go in one request.</p>
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">any | object</span></dt>
+    <dd>the value for the node's tag (or for <code>msg.topic</code>), or <code>{tag: value, …}</code>
+      to write several tags. Arrays for <code>[n]</code> tags. Dates as Date or ISO string.</dd>
+    <dt class="optional">topic <span class="property-type">string</span></dt>
+    <dd>the tag, when the node has no tag and the payload is not an object.</dd>
+  </dl>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>s7 <span class="property-type">object</span></dt>
+    <dd><code>results</code> (tag, error) and <code>ms</code>.</dd>
+  </dl>
+  <h3>Details</h3>
+  <p>The message goes out only when all writes are good. Otherwise the node raises an error:
+    use a Catch node.</p>
+  <p>S7CommPlus: a single bit (for example <code>M20.1</code>) cannot be written through absolute
+    access. Use a symbol for it.</p>
+</script>

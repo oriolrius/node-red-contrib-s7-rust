@@ -1,0 +1,18 @@
+{
+  "s7rs-info": {
+    "label": {
+      "name": "Name",
+      "endpoint": "PLC",
+      "action": "Action",
+      "args": "Args (JSON)"
+    },
+    "group": {
+      "both": "both protocols"
+    },
+    "errors": {
+      "noEndpoint": "no S7 endpoint configured",
+      "noAction": "no action: set it in the node or in msg.action",
+      "args": "args: __error__"
+    }
+  }
+}

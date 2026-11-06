@@ -1,0 +1,17 @@
+{
+  "s7rs-write": {
+    "label": {
+      "name": "Name",
+      "endpoint": "PLC",
+      "tag": "Tag"
+    },
+    "placeholder": {
+      "tag": "empty: msg.topic or msg.payload object"
+    },
+    "errors": {
+      "noEndpoint": "no S7 endpoint configured",
+      "nothing": "nothing to write: set a tag, msg.topic, or send msg.payload = {tag: value}",
+      "failed": "write failed: __tags__"
+    }
+  }
+}

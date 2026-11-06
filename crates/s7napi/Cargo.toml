@@ -1,0 +1,27 @@
+[package]
+name = "s7napi"
+description = "Node-API addon: S7comm and S7CommPlus clients inside the Node-RED process (Linux x64)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Test-only: exposes in-process fake PLCs (classic and S7CommPlus) to the JS tests.
+fake = ["s7/fakecpu", "s7plus/fake"]
+
+[dependencies]
+s7 = { path = "../s7" }
+s7plus = { path = "../s7plus" }
+napi = { version = "2", default-features = false, features = ["napi8"] }
+napi-derive = "2"
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+
+[build-dependencies]
+napi-build = "2"

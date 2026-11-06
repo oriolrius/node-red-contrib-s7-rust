@@ -1,0 +1,72 @@
+<script type="text/javascript">
+  RED.nodes.registerType('s7rs-info', {
+    category: 'network',
+    color: '#3FADB5',
+    defaults: {
+      name: { value: '' },
+      endpoint: { value: '', type: 's7rs-endpoint', required: true },
+      action: { value: 'cpuState' },
+      args: {
+        value: '',
+        validate: function (v) {
+          if (!v) return true;
+          try {
+            JSON.parse(v);
+            return true;
+          } catch (e) {
+            return false;
+          }
+        },
+      },
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: 's7rs-plc.svg',
+    paletteLabel: 's7 info',
+    label: function () {
+      return this.name || `s7 ${this.action || 'info'}`;
+    },
+  });
+</script>
+
+<script type="text/html" data-template-name="s7rs-info">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> <span data-i18n="s7rs-info.label.name"></span></label>
+    <input type="text" id="node-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-endpoint"><i class="fa fa-plug"></i> <span data-i18n="s7rs-info.label.endpoint"></span></label>
+    <input type="text" id="node-input-endpoint" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-action"><i class="fa fa-cog"></i> <span data-i18n="s7rs-info.label.action"></span></label>
+    <select id="node-input-action">
+      <optgroup data-i18n="[label]s7rs-info.group.both">
+        <option value="status">status</option>
+        <option value="cpuState">cpuState (RUN / STOP)</option>
+      </optgroup>
+      <optgroup label="S7comm">
+        <option value="identify">identify</option>
+        <option value="szlList">szlList</option>
+        <option value="szl">szl {id, index}</option>
+        <option value="clock">clock</option>
+        <option value="setClock">setClock {time?}</option>
+        <option value="syncClock">syncClock {thresholdMs}</option>
+        <option value="blocks">blocks</option>
+        <option value="listBlocks">listBlocks {type}</option>
+        <option value="blockInfo">blockInfo {type, number}</option>
+      </optgroup>
+      <optgroup label="S7CommPlus">
+        <option value="info">info</option>
+        <option value="dbs">dbs</option>
+        <option value="browse">browse</option>
+        <option value="alarms">alarms {all}</option>
+        <option value="limits">limits</option>
+      </optgroup>
+    </select>
+  </div>
+  <div class="form-row">
+    <label for="node-input-args" data-i18n="s7rs-info.label.args"></label>
+    <input type="text" id="node-input-args" placeholder='{"id": "0x0011"}' style="font-family: monospace" />
+  </div>
+</script>

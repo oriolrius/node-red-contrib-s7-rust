@@ -1,0 +1,24 @@
+<script type="text/html" data-help-name="s7rs-endpoint">
+  <p>A connection to one Siemens S7 CPU (ISO-on-TCP, port 102). The protocol runs in Rust inside
+    the Node-RED process, one thread per connection.</p>
+  <h3>Details</h3>
+  <h4>Protocol</h4>
+  <p><code>S7comm</code> is the classic protocol: all S7 families and LOGO!, absolute addresses.
+    S7-1200/1500 need PUT/GET access enabled, and the DBs must be not optimized.</p>
+  <p><code>S7CommPlus</code> is the S7-1200/1500 protocol: symbolic access to optimized DBs
+    (<code>"DB_Opt".mat[1,2]</code>), PLC tag names (<code>Test_Int</code>), absolute I/Q/M/DB
+    addresses too, optional TLS and password (legitimation).</p>
+  <h4>Classic connection</h4>
+  <p>Rack, slot and link type come from the CPU family when they are empty
+    (S7-300: slot 2; S7-1200/1500: slot 1). With TSAPs set, rack and slot are not used.</p>
+  <p>Gap: tags in the same area and DB that are closer than N bytes are read as one block.</p>
+  <h4>S7CommPlus</h4>
+  <p>Symbols are resolved once per session (a reconnect resolves them again). The PLC
+    certificate is not verified. The password is stored as a Node-RED credential.</p>
+  <h4>Log</h4>
+  <p>Messages go to the Node-RED log. <code>trace</code> logs every frame in hex.</p>
+  <h3>References</h3>
+  <ul>
+    <li><a href="https://github.com/oriolrius/node-red-contrib-s7-rust#readme">README</a> - addresses and types</li>
+  </ul>
+</script>

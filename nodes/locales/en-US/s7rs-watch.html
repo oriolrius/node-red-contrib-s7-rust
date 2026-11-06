@@ -1,0 +1,24 @@
+<script type="text/html" data-help-name="s7rs-watch">
+  <p>Reads tags at a fixed interval and sends a message when a value changes.</p>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">any | object</span></dt>
+    <dd>one message per tag: the value, and <code>msg.topic</code> is the tag.
+      One message with all tags: <code>{tag: value}</code> with the last value of each tag.</dd>
+    <dt>quality <span class="property-type">string | object</span></dt>
+    <dd><code>good</code> or <code>bad</code>. A bad tag also has <code>msg.error</code>.</dd>
+    <dt class="optional">changed <span class="property-type">array</span></dt>
+    <dd>all tags mode only: the tags that changed in this cycle.</dd>
+    <dt>ts <span class="property-type">string</span></dt>
+    <dd>start time of the read cycle (ISO, UTC).</dd>
+  </dl>
+  <h3>Details</h3>
+  <p>A Rust thread reads the tags and compares the raw PLC bytes. Node-RED gets no message when
+    nothing changed. A change of quality (for example, the PLC goes away) is also a change.</p>
+  <p>The first cycle sends all tags. Clear "send only values that changed" to send every cycle.</p>
+  <h4>Fast while</h4>
+  <p>Conditional rate: while this tag is true (or not zero), the node reads every <code>N</code> ms
+    instead of the interval. The node does not send the condition tag, unless it is also in the list.</p>
+  <h4>S7CommPlus</h4>
+  <p>The watch uses polling, not PLC subscriptions.</p>
+</script>

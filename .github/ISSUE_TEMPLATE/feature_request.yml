@@ -1,0 +1,14 @@
+name: Feature request
+description: A new function, data type, PLC family or node option.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you need, and why
+    validations:
+      required: true
+  - type: input
+    id: plc
+    attributes:
+      label: PLC family and protocol

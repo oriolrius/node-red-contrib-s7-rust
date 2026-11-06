@@ -1,0 +1,27 @@
+{
+  "s7rs-read": {
+    "label": {
+      "name": "Name",
+      "endpoint": "PLC",
+      "tags": "Tags",
+      "output": "Output"
+    },
+    "placeholder": {
+      "tags": "one address per line, e.g.\nDB1.DBW2:int\nMD12:real"
+    },
+    "output": {
+      "auto": "value (1 tag) or object",
+      "object": "object {tag: value}",
+      "array": "array of values"
+    },
+    "portLabel": {
+      "in": "trigger",
+      "out": "values"
+    },
+    "errors": {
+      "noEndpoint": "no S7 endpoint configured",
+      "noTags": "no tags: set them in the node, in msg.tags or in msg.topic",
+      "badTags": "bad tags: __tags__"
+    }
+  }
+}

@@ -1,0 +1,69 @@
+<script type="text/javascript">
+  RED.nodes.registerType('s7rs-watch', {
+    category: 'network',
+    color: '#3FADB5',
+    defaults: {
+      name: { value: '' },
+      endpoint: { value: '', type: 's7rs-endpoint', required: true },
+      tags: { value: '', required: true },
+      interval: { value: 1000, required: true, validate: RED.validators.number() },
+      onChange: { value: true },
+      output: { value: 'each' },
+      topic: { value: '' },
+      condTag: { value: '' },
+      condInterval: { value: 100, validate: RED.validators.number(true) },
+    },
+    inputs: 0,
+    outputs: 1,
+    icon: 'font-awesome/fa-eye',
+    paletteLabel: 's7 watch',
+    label: function () {
+      const n = (this.tags || '').split('\n').filter((s) => s.trim()).length;
+      return this.name || `s7 watch (${n} @ ${this.interval} ms)`;
+    },
+    outputLabels: function () {
+      return this._('s7rs-watch.portLabel.out');
+    },
+  });
+</script>
+
+<script type="text/html" data-template-name="s7rs-watch">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> <span data-i18n="s7rs-watch.label.name"></span></label>
+    <input type="text" id="node-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-endpoint"><i class="fa fa-plug"></i> <span data-i18n="s7rs-watch.label.endpoint"></span></label>
+    <input type="text" id="node-input-endpoint" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-tags"><i class="fa fa-list"></i> <span data-i18n="s7rs-watch.label.tags"></span></label>
+    <textarea id="node-input-tags" rows="8" style="width: 70%; font-family: monospace"
+      data-i18n="[placeholder]s7rs-watch.placeholder.tags"></textarea>
+  </div>
+  <div class="form-row">
+    <label for="node-input-interval"><i class="fa fa-clock-o"></i> <span data-i18n="s7rs-watch.label.interval"></span></label>
+    <input type="text" id="node-input-interval" style="width: 80px" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-condTag"><i class="fa fa-bolt"></i> <span data-i18n="s7rs-watch.label.condTag"></span></label>
+    <input type="text" id="node-input-condTag" data-i18n="[placeholder]s7rs-watch.placeholder.condTag" style="width: 45%; font-family: monospace" />
+    <input type="text" id="node-input-condInterval" style="width: 60px" /> ms
+  </div>
+  <div class="form-row">
+    <label for="node-input-onChange">&nbsp;</label>
+    <input type="checkbox" id="node-input-onChange" style="width: auto; display: inline-block" />
+    <span data-i18n="s7rs-watch.label.onChange"></span>
+  </div>
+  <div class="form-row">
+    <label for="node-input-output" data-i18n="s7rs-watch.label.output"></label>
+    <select id="node-input-output">
+      <option value="each" data-i18n="s7rs-watch.output.each"></option>
+      <option value="object" data-i18n="s7rs-watch.output.object"></option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label for="node-input-topic" data-i18n="s7rs-watch.label.topic"></label>
+    <input type="text" id="node-input-topic" data-i18n="[placeholder]s7rs-watch.placeholder.topic" />
+  </div>
+</script>

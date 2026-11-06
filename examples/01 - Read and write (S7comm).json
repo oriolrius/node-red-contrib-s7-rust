@@ -1,0 +1,180 @@
+[
+  {
+    "id": "c1",
+    "type": "comment",
+    "name": "Read and write with S7comm (classic)",
+    "info": "Set the PLC address in the endpoint.\nS7-1200/1500: enable PUT/GET access and use DBs that are not optimized.\n\nThe read node reads three tags every second and sends {tag: value}.\nThe write node takes msg.topic = tag, or msg.payload = {tag: value, ...}.",
+    "x": 230,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "i1",
+    "type": "inject",
+    "name": "every 1 s",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "1",
+    "crontab": "",
+    "once": true,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 140,
+    "y": 100,
+    "wires": [
+      [
+        "r1"
+      ]
+    ]
+  },
+  {
+    "id": "r1",
+    "type": "s7rs-read",
+    "name": "",
+    "endpoint": "ep1",
+    "tags": "MW10:int\nMD12:real\nM20.0\nDB1.DBW0[3]:int",
+    "output": "object",
+    "x": 340,
+    "y": 100,
+    "wires": [
+      [
+        "d1"
+      ]
+    ]
+  },
+  {
+    "id": "d1",
+    "type": "debug",
+    "name": "values",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 540,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "i2",
+    "type": "inject",
+    "name": "MW10 := 123",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "MW10:int",
+    "payload": "123",
+    "payloadType": "num",
+    "x": 150,
+    "y": 160,
+    "wires": [
+      [
+        "w1"
+      ]
+    ]
+  },
+  {
+    "id": "i3",
+    "type": "inject",
+    "name": "several tags",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "{\"MD12:real\":3.5,\"M20.0\":true,\"DB1.DBW0[3]:int\":[1,2,3]}",
+    "payloadType": "json",
+    "x": 150,
+    "y": 200,
+    "wires": [
+      [
+        "w1"
+      ]
+    ]
+  },
+  {
+    "id": "w1",
+    "type": "s7rs-write",
+    "name": "",
+    "endpoint": "ep1",
+    "tag": "",
+    "x": 360,
+    "y": 180,
+    "wires": [
+      [
+        "d2"
+      ]
+    ]
+  },
+  {
+    "id": "d2",
+    "type": "debug",
+    "name": "write result",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "s7",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 550,
+    "y": 180,
+    "wires": []
+  },
+  {
+    "id": "ep1",
+    "type": "s7rs-endpoint",
+    "name": "PLC (S7comm)",
+    "protocol": "s7",
+    "host": "192.168.0.1",
+    "port": 102,
+    "cpu": "1200",
+    "rack": "",
+    "slot": "",
+    "link": "",
+    "localTsap": "",
+    "remoteTsap": "",
+    "pdu": "",
+    "timeout": 5000,
+    "attempts": 3,
+    "reconnect": 5000,
+    "gap": 5,
+    "byteOrder": "big",
+    "logLevel": "warn",
+    "tsap": "SIMATIC-ROOT-HMI",
+    "tls": false,
+    "username": ""
+  }
+]

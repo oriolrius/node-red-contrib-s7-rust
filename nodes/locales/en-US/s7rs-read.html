@@ -1,0 +1,33 @@
+<script type="text/html" data-help-name="s7rs-read">
+  <p>Reads S7 tags when a message arrives.</p>
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt class="optional">tags <span class="property-type">array</span></dt>
+    <dd>addresses to read, if the node has no tags. Also <code>msg.payload</code> as an array,
+      or one address in <code>msg.topic</code>.</dd>
+  </dl>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">any | object | array</span></dt>
+    <dd>the value (one tag), <code>{tag: value}</code> or an array, as set in Output.
+      A bad tag gives <code>null</code>.</dd>
+    <dt>s7 <span class="property-type">object</span></dt>
+    <dd><code>values</code> (tag, value, quality, error), <code>errors</code> ({tag: text},
+      only when a tag is bad) and <code>ms</code> (duration).</dd>
+  </dl>
+  <h3>Details</h3>
+  <p>All tags go in as few S7 requests as the PDU allows. Times are ISO strings. 64-bit
+    integers outside ±2<sup>53</sup> are strings.</p>
+  <h4>Addresses</h4>
+  <ul>
+    <li>Siemens: <code>DB1.DBW2:int</code>, <code>MD12:real</code>, <code>M0.1</code>,
+      <code>MW120[4]</code>, <code>DB1.DBB10:string[20]</code></li>
+    <li>nodes7: <code>DB1,REAL4</code>, <code>MI14</code></li>
+    <li>S7CommPlus only, symbols: <code>"DB_Opt".st.x</code>, <code>Test_Int</code>, or any
+      name with the <code>sym:</code> prefix</li>
+  </ul>
+  <h3>References</h3>
+  <ul>
+    <li><a href="https://github.com/oriolrius/node-red-contrib-s7-rust#addresses">Address syntax and types</a></li>
+  </ul>
+</script>

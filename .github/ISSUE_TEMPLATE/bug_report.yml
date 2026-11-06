@@ -1,0 +1,43 @@
+name: Bug report
+description: Something does not work as the documentation says.
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Node-RED / Node.js / OS
+      placeholder: Node-RED 5.0.9, Node.js 22, Debian 12 (or nodered/node-red Docker)
+    validations:
+      required: true
+  - type: input
+    id: plc
+    attributes:
+      label: PLC and protocol
+      description: CPU order number and firmware (s7 info → identify / info), S7comm or S7CommPlus.
+      placeholder: 6ES7 212-1BE40-0XB0 V4.6, S7CommPlus
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: flow
+    attributes:
+      label: Minimal flow or tag list
+      render: json
+  - type: textarea
+    id: log
+    attributes:
+      label: Log (endpoint log level debug or trace)
+      description: Remove IP addresses and passwords you do not want to publish.
+      render: text

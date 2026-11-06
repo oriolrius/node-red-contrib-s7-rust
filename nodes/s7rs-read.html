@@ -1,0 +1,50 @@
+<script type="text/javascript">
+  RED.nodes.registerType('s7rs-read', {
+    category: 'network',
+    color: '#3FADB5',
+    defaults: {
+      name: { value: '' },
+      endpoint: { value: '', type: 's7rs-endpoint', required: true },
+      tags: { value: '' },
+      output: { value: 'auto' },
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: 'font-awesome/fa-download',
+    paletteLabel: 's7 read',
+    label: function () {
+      const n = (this.tags || '').split('\n').filter((s) => s.trim()).length;
+      return this.name || (n === 1 ? this.tags.trim() : n ? `s7 read (${n})` : 's7 read');
+    },
+    inputLabels: function () {
+      return this._('s7rs-read.portLabel.in');
+    },
+    outputLabels: function () {
+      return this._('s7rs-read.portLabel.out');
+    },
+  });
+</script>
+
+<script type="text/html" data-template-name="s7rs-read">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> <span data-i18n="s7rs-read.label.name"></span></label>
+    <input type="text" id="node-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-endpoint"><i class="fa fa-plug"></i> <span data-i18n="s7rs-read.label.endpoint"></span></label>
+    <input type="text" id="node-input-endpoint" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-tags"><i class="fa fa-list"></i> <span data-i18n="s7rs-read.label.tags"></span></label>
+    <textarea id="node-input-tags" rows="6" style="width: 70%; font-family: monospace"
+      data-i18n="[placeholder]s7rs-read.placeholder.tags"></textarea>
+  </div>
+  <div class="form-row">
+    <label for="node-input-output" data-i18n="s7rs-read.label.output"></label>
+    <select id="node-input-output">
+      <option value="auto" data-i18n="s7rs-read.output.auto"></option>
+      <option value="object" data-i18n="s7rs-read.output.object"></option>
+      <option value="array" data-i18n="s7rs-read.output.array"></option>
+    </select>
+  </div>
+</script>

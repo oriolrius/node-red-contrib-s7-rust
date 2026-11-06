@@ -1,0 +1,38 @@
+<script type="text/html" data-help-name="s7rs-info">
+  <p>Diagnostics and browsing of the PLC when a message arrives.</p>
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt class="optional">action <span class="property-type">string</span></dt>
+    <dd>overrides the action of the node.</dd>
+    <dt class="optional">payload <span class="property-type">object</span></dt>
+    <dd>arguments of the action. If it is not an object, the node uses its Args.</dd>
+  </dl>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">object | array</span></dt>
+    <dd>the result of the action.</dd>
+    <dt>s7 <span class="property-type">object</span></dt>
+    <dd><code>action</code> and <code>ms</code>.</dd>
+  </dl>
+  <h3>Details</h3>
+  <h4>Both protocols</h4>
+  <ul>
+    <li><code>status</code>: connection state, requests, errors, latency percentiles</li>
+    <li><code>cpuState</code>: RUN or STOP</li>
+  </ul>
+  <h4>S7comm</h4>
+  <ul>
+    <li><code>identify</code>: order number, firmware, module names</li>
+    <li><code>szlList</code>, <code>szl {id, index}</code>: system status lists (raw data in hex)</li>
+    <li><code>clock</code>, <code>setClock {time?}</code>, <code>syncClock {thresholdMs}</code>: PLC clock</li>
+    <li><code>blocks</code>, <code>listBlocks {type}</code>, <code>blockInfo {type, number}</code></li>
+  </ul>
+  <h4>S7CommPlus</h4>
+  <ul>
+    <li><code>info</code>: session, PAOM string, limits</li>
+    <li><code>dbs</code>: data blocks; <code>browse</code>: all symbols with their types</li>
+    <li><code>alarms {all}</code>: active alarms; <code>limits</code>: system limits</li>
+  </ul>
+  <p><code>setClock</code> and <code>syncClock</code> change the PLC clock. STOP/START of the CPU and
+    block upload are not available.</p>
+</script>

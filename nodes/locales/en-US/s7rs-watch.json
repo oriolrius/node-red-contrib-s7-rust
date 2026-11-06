@@ -1,0 +1,32 @@
+{
+  "s7rs-watch": {
+    "label": {
+      "name": "Name",
+      "endpoint": "PLC",
+      "tags": "Tags",
+      "interval": "Interval (ms)",
+      "condTag": "Fast while",
+      "onChange": "send only values that changed",
+      "output": "Output",
+      "topic": "Topic"
+    },
+    "placeholder": {
+      "tags": "one address per line",
+      "condTag": "optional condition tag, e.g. M0.0",
+      "topic": "object mode only"
+    },
+    "output": {
+      "each": "one message per tag (topic = tag)",
+      "object": "one message with all tags"
+    },
+    "portLabel": {
+      "out": "changes"
+    },
+    "status": {
+      "noTags": "no tags"
+    },
+    "errors": {
+      "subscribe": "subscribe: __error__"
+    }
+  }
+}

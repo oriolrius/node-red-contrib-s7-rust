@@ -1,0 +1,34 @@
+<script type="text/javascript">
+  RED.nodes.registerType('s7rs-write', {
+    category: 'network',
+    color: '#3FADB5',
+    defaults: {
+      name: { value: '' },
+      endpoint: { value: '', type: 's7rs-endpoint', required: true },
+      tag: { value: '' },
+    },
+    inputs: 1,
+    outputs: 1,
+    icon: 'font-awesome/fa-upload',
+    align: 'right',
+    paletteLabel: 's7 write',
+    label: function () {
+      return this.name || this.tag || 's7 write';
+    },
+  });
+</script>
+
+<script type="text/html" data-template-name="s7rs-write">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> <span data-i18n="s7rs-write.label.name"></span></label>
+    <input type="text" id="node-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-endpoint"><i class="fa fa-plug"></i> <span data-i18n="s7rs-write.label.endpoint"></span></label>
+    <input type="text" id="node-input-endpoint" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-tag"><i class="fa fa-crosshairs"></i> <span data-i18n="s7rs-write.label.tag"></span></label>
+    <input type="text" id="node-input-tag" data-i18n="[placeholder]s7rs-write.placeholder.tag" style="font-family: monospace" />
+  </div>
+</script>

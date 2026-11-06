@@ -1,0 +1,150 @@
+<script type="text/javascript">
+  RED.nodes.registerType('s7rs-endpoint', {
+    category: 'config',
+    defaults: {
+      name: { value: '' },
+      protocol: { value: 's7' },
+      host: { value: '', required: true },
+      port: { value: 102, required: true, validate: RED.validators.number() },
+      cpu: { value: '1200' },
+      rack: { value: '' },
+      slot: { value: '' },
+      link: { value: '' },
+      localTsap: { value: '' },
+      remoteTsap: { value: '' },
+      pdu: { value: '' },
+      timeout: { value: 5000, validate: RED.validators.number() },
+      attempts: { value: 3, validate: RED.validators.number() },
+      reconnect: { value: 5000, validate: RED.validators.number() },
+      gap: { value: 5 },
+      byteOrder: { value: 'big' },
+      logLevel: { value: 'warn' },
+      tsap: { value: 'SIMATIC-ROOT-HMI' },
+      tls: { value: false },
+      username: { value: '' },
+    },
+    credentials: {
+      password: { type: 'password' },
+    },
+    label: function () {
+      const p = this.protocol === 's7plus' ? 'S7+' : `S7-${this.cpu}`;
+      return this.name || (this.host ? `${p} ${this.host}:${this.port || 102}` : 's7 endpoint');
+    },
+    oneditprepare: function () {
+      const sync = () => {
+        const plus = $('#node-config-input-protocol').val() === 's7plus';
+        $('.s7rs-classic').toggle(!plus);
+        $('.s7rs-plus').toggle(plus);
+      };
+      $('#node-config-input-protocol').on('change', sync);
+      sync();
+    },
+  });
+</script>
+
+<script type="text/html" data-template-name="s7rs-endpoint">
+  <div class="form-row">
+    <label for="node-config-input-name"><i class="fa fa-tag"></i> <span data-i18n="s7rs-endpoint.label.name"></span></label>
+    <input type="text" id="node-config-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-protocol"><i class="fa fa-exchange"></i> <span data-i18n="s7rs-endpoint.label.protocol"></span></label>
+    <select id="node-config-input-protocol">
+      <option value="s7" data-i18n="s7rs-endpoint.protocol.s7"></option>
+      <option value="s7plus" data-i18n="s7rs-endpoint.protocol.s7plus"></option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-host"><i class="fa fa-server"></i> <span data-i18n="s7rs-endpoint.label.host"></span></label>
+    <input type="text" id="node-config-input-host" placeholder="192.168.0.1" style="width: 45%" />
+    <label for="node-config-input-port" style="width: auto; margin-left: 10px" data-i18n="s7rs-endpoint.label.port"></label>
+    <input type="text" id="node-config-input-port" style="width: 70px" />
+  </div>
+  <div class="form-row s7rs-classic">
+    <label for="node-config-input-cpu"><i class="fa fa-microchip"></i> <span data-i18n="s7rs-endpoint.label.cpu"></span></label>
+    <select id="node-config-input-cpu">
+      <option value="1200">S7-1200</option>
+      <option value="1500">S7-1500</option>
+      <option value="300">S7-300</option>
+      <option value="400">S7-400</option>
+      <option value="200">S7-200</option>
+      <option value="logo">LOGO! 8</option>
+      <option value="logo-tsap">LOGO! 8 (TSAP 10.00 / 20.00)</option>
+    </select>
+  </div>
+  <div class="form-row s7rs-classic">
+    <label for="node-config-input-rack" data-i18n="s7rs-endpoint.label.rackSlot"></label>
+    <input type="text" id="node-config-input-rack" data-i18n="[placeholder]s7rs-endpoint.placeholder.default" style="width: 80px" />
+    <input type="text" id="node-config-input-slot" data-i18n="[placeholder]s7rs-endpoint.placeholder.default" style="width: 80px" />
+  </div>
+  <div class="form-row s7rs-classic">
+    <label for="node-config-input-link" data-i18n="s7rs-endpoint.label.link"></label>
+    <select id="node-config-input-link">
+      <option value="" data-i18n="s7rs-endpoint.link.default"></option>
+      <option value="1">PG</option>
+      <option value="2">OP</option>
+      <option value="3" data-i18n="s7rs-endpoint.link.basic"></option>
+    </select>
+  </div>
+  <div class="form-row s7rs-classic">
+    <label for="node-config-input-localTsap" data-i18n="s7rs-endpoint.label.tsaps"></label>
+    <input type="text" id="node-config-input-localTsap" placeholder="10.00" style="width: 100px" />
+    <input type="text" id="node-config-input-remoteTsap" placeholder="20.00" style="width: 100px" />
+  </div>
+  <div class="form-row s7rs-classic">
+    <label for="node-config-input-pdu" data-i18n="s7rs-endpoint.label.pdu"></label>
+    <input type="text" id="node-config-input-pdu" placeholder="960" style="width: 100px" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-timeout" data-i18n="s7rs-endpoint.label.timeout"></label>
+    <input type="text" id="node-config-input-timeout" style="width: 80px" />
+    <label for="node-config-input-attempts" style="width: auto; margin-left: 10px" data-i18n="s7rs-endpoint.label.attempts"></label>
+    <input type="text" id="node-config-input-attempts" style="width: 50px" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-reconnect" data-i18n="s7rs-endpoint.label.reconnect"></label>
+    <input type="text" id="node-config-input-reconnect" style="width: 80px" />
+  </div>
+  <div class="form-row s7rs-classic">
+    <label for="node-config-input-gap" data-i18n="s7rs-endpoint.label.gap"></label>
+    <input type="text" id="node-config-input-gap" style="width: 80px" />
+    <span style="opacity: 0.7" data-i18n="s7rs-endpoint.hint.gap"></span>
+  </div>
+  <div class="form-row s7rs-classic">
+    <label for="node-config-input-byteOrder" data-i18n="s7rs-endpoint.label.byteOrder"></label>
+    <select id="node-config-input-byteOrder">
+      <option value="big" data-i18n="s7rs-endpoint.byteOrder.big"></option>
+      <option value="little" data-i18n="s7rs-endpoint.byteOrder.little"></option>
+    </select>
+  </div>
+  <div class="form-row s7rs-plus">
+    <label for="node-config-input-tsap" data-i18n="s7rs-endpoint.label.remoteTsap"></label>
+    <select id="node-config-input-tsap">
+      <option value="SIMATIC-ROOT-HMI">SIMATIC-ROOT-HMI</option>
+      <option value="SIMATIC-ROOT-ES">SIMATIC-ROOT-ES</option>
+    </select>
+  </div>
+  <div class="form-row s7rs-plus">
+    <label for="node-config-input-tls">&nbsp;</label>
+    <input type="checkbox" id="node-config-input-tls" style="width: auto; display: inline-block" />
+    <span data-i18n="s7rs-endpoint.label.tls"></span>
+  </div>
+  <div class="form-row s7rs-plus">
+    <label for="node-config-input-username"><i class="fa fa-user"></i> <span data-i18n="s7rs-endpoint.label.username"></span></label>
+    <input type="text" id="node-config-input-username" data-i18n="[placeholder]s7rs-endpoint.placeholder.username" />
+  </div>
+  <div class="form-row s7rs-plus">
+    <label for="node-config-input-password"><i class="fa fa-lock"></i> <span data-i18n="s7rs-endpoint.label.password"></span></label>
+    <input type="password" id="node-config-input-password" data-i18n="[placeholder]s7rs-endpoint.placeholder.password" />
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-logLevel" data-i18n="s7rs-endpoint.label.logLevel"></label>
+    <select id="node-config-input-logLevel">
+      <option value="error">error</option>
+      <option value="warn">warn</option>
+      <option value="info">info</option>
+      <option value="debug">debug</option>
+      <option value="trace" data-i18n="s7rs-endpoint.logLevel.trace"></option>
+    </select>
+  </div>
+</script>

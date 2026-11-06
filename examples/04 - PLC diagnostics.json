@@ -1,0 +1,180 @@
+[
+  {
+    "id": "c4",
+    "type": "comment",
+    "name": "Diagnostics with s7 info",
+    "info": "status: connection state and latency (no PLC request).\ncpuState: RUN or STOP.\nidentify: order number and firmware (S7comm).\nmsg.action overrides the action of the node.",
+    "x": 200,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "i6",
+    "type": "inject",
+    "name": "status",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "n2"
+      ]
+    ]
+  },
+  {
+    "id": "n2",
+    "type": "s7rs-info",
+    "name": "",
+    "endpoint": "ep4",
+    "action": "status",
+    "args": "",
+    "x": 310,
+    "y": 100,
+    "wires": [
+      [
+        "d6"
+      ]
+    ]
+  },
+  {
+    "id": "i7",
+    "type": "inject",
+    "name": "cpuState",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 140,
+    "wires": [
+      [
+        "n3"
+      ]
+    ]
+  },
+  {
+    "id": "n3",
+    "type": "s7rs-info",
+    "name": "",
+    "endpoint": "ep4",
+    "action": "cpuState",
+    "args": "",
+    "x": 320,
+    "y": 140,
+    "wires": [
+      [
+        "d6"
+      ]
+    ]
+  },
+  {
+    "id": "i8",
+    "type": "inject",
+    "name": "identify",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 180,
+    "wires": [
+      [
+        "n4"
+      ]
+    ]
+  },
+  {
+    "id": "n4",
+    "type": "s7rs-info",
+    "name": "",
+    "endpoint": "ep4",
+    "action": "identify",
+    "args": "",
+    "x": 320,
+    "y": 180,
+    "wires": [
+      [
+        "d6"
+      ]
+    ]
+  },
+  {
+    "id": "d6",
+    "type": "debug",
+    "name": "result",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 520,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "ep4",
+    "type": "s7rs-endpoint",
+    "name": "PLC (S7comm)",
+    "protocol": "s7",
+    "host": "192.168.0.1",
+    "port": 102,
+    "cpu": "1200",
+    "rack": "",
+    "slot": "",
+    "link": "",
+    "localTsap": "",
+    "remoteTsap": "",
+    "pdu": "",
+    "timeout": 5000,
+    "attempts": 3,
+    "reconnect": 5000,
+    "gap": 5,
+    "byteOrder": "big",
+    "logLevel": "warn",
+    "tsap": "SIMATIC-ROOT-HMI",
+    "tls": false,
+    "username": ""
+  }
+]

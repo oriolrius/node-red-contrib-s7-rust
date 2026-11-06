@@ -1,0 +1,20 @@
+[package]
+name = "s7"
+description = "S7comm (classic Siemens S7, ISO-on-TCP) client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[features]
+# In-process fake S7 CPU (test support, also for other crates' tests).
+fakecpu = []
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+socket2 = "0.6"
+
+[dev-dependencies]
+s7 = { path = ".", features = ["fakecpu"] }

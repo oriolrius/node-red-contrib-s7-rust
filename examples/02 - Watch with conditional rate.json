@@ -1,0 +1,71 @@
+[
+  {
+    "id": "c2",
+    "type": "comment",
+    "name": "Watch: only changes, faster while a tag is true",
+    "info": "The watch node reads the tags in a Rust thread every 1000 ms and sends a message only when a value changes.\nWhile M0.0 is true it reads every 100 ms (Fast while).\nOutput 'one message per tag': msg.topic = tag, msg.payload = value, msg.quality.",
+    "x": 260,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "wa1",
+    "type": "s7rs-watch",
+    "name": "",
+    "endpoint": "ep2",
+    "tags": "MW10:int\nMD12:real\nDB1.DBX0.0",
+    "interval": 1000,
+    "onChange": true,
+    "output": "each",
+    "topic": "",
+    "condTag": "M0.0",
+    "condInterval": 100,
+    "x": 170,
+    "y": 100,
+    "wires": [
+      [
+        "d3"
+      ]
+    ]
+  },
+  {
+    "id": "d3",
+    "type": "debug",
+    "name": "changes",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 400,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "ep2",
+    "type": "s7rs-endpoint",
+    "name": "PLC (S7comm)",
+    "protocol": "s7",
+    "host": "192.168.0.1",
+    "port": 102,
+    "cpu": "1500",
+    "rack": "",
+    "slot": "",
+    "link": "",
+    "localTsap": "",
+    "remoteTsap": "",
+    "pdu": "",
+    "timeout": 5000,
+    "attempts": 3,
+    "reconnect": 5000,
+    "gap": 5,
+    "byteOrder": "big",
+    "logLevel": "warn",
+    "tsap": "SIMATIC-ROOT-HMI",
+    "tls": false,
+    "username": ""
+  }
+]

@@ -1,0 +1,153 @@
+[
+  {
+    "id": "c3",
+    "type": "comment",
+    "name": "S7CommPlus: symbols of optimized DBs and PLC tags",
+    "info": "S7-1200/1500 only. No PUT/GET needed. Symbols in double quotes for DBs (\"DB_Data\".speed), PLC tag names as they are (Motor_On).\nAbsolute addresses (MW10:int) work too, in the same request.\nThe browse button lists every symbol of the PLC.",
+    "x": 270,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "i4",
+    "type": "inject",
+    "name": "read",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 100,
+    "wires": [
+      [
+        "r2"
+      ]
+    ]
+  },
+  {
+    "id": "r2",
+    "type": "s7rs-read",
+    "name": "",
+    "endpoint": "ep3",
+    "tags": "\"DB_Data\".speed\n\"DB_Data\".values[2]\nMotor_On\nMW10:int",
+    "output": "object",
+    "x": 310,
+    "y": 100,
+    "wires": [
+      [
+        "d4"
+      ]
+    ]
+  },
+  {
+    "id": "d4",
+    "type": "debug",
+    "name": "values",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 520,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "i5",
+    "type": "inject",
+    "name": "browse",
+    "props": [
+      {
+        "p": "payload"
+      },
+      {
+        "p": "topic",
+        "vt": "str"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.5,
+    "topic": "",
+    "payload": "",
+    "payloadType": "date",
+    "x": 130,
+    "y": 160,
+    "wires": [
+      [
+        "n1"
+      ]
+    ]
+  },
+  {
+    "id": "n1",
+    "type": "s7rs-info",
+    "name": "",
+    "endpoint": "ep3",
+    "action": "browse",
+    "args": "",
+    "x": 310,
+    "y": 160,
+    "wires": [
+      [
+        "d5"
+      ]
+    ]
+  },
+  {
+    "id": "d5",
+    "type": "debug",
+    "name": "symbols",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 520,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "ep3",
+    "type": "s7rs-endpoint",
+    "name": "PLC (S7CommPlus)",
+    "protocol": "s7plus",
+    "host": "192.168.0.1",
+    "port": 102,
+    "cpu": "1200",
+    "rack": "",
+    "slot": "",
+    "link": "",
+    "localTsap": "",
+    "remoteTsap": "",
+    "pdu": "",
+    "timeout": 5000,
+    "attempts": 3,
+    "reconnect": 5000,
+    "gap": 5,
+    "byteOrder": "big",
+    "logLevel": "warn",
+    "tsap": "SIMATIC-ROOT-HMI",
+    "tls": false,
+    "username": ""
+  }
+]
