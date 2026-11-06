@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-06
+
+### Security
+
+- Development dependencies only (the published package has no dependencies): npm `overrides`
+  for `multer` 2.5.0 (GHSA high), `body-parser` 1.20.9 (high) and the `npm` CLI bundled by
+  Node-RED 11.21.2, which brings `undici` 6.29.1 (high and medium). No change to the nodes or
+  the binaries.
+
 ## [1.0.1] - 2026-11-06
 
 ### Changed
@@ -33,6 +42,7 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/releases/tag/v1.0.0
