@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-06
+
+### Changed
+
+- Release built and published by GitHub Actions with npm Trusted Publishing (OIDC) and
+  provenance. No code change.
+
 ## [1.0.0] - 2026-11-06
 
 First release: the next generation of `@oriolrius/node-red-contrib-s7`.
@@ -26,5 +33,6 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/releases/tag/v1.0.0
