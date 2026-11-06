@@ -1,6 +1,6 @@
 {
   "name": "node-red-contrib-s7-rust",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Siemens S7 nodes for Node-RED: S7comm and S7CommPlus (S7-1200/1500 symbolic access) clients written in Rust, running in-process (Node-API). Linux x64.",
   "keywords": [
     "node-red",

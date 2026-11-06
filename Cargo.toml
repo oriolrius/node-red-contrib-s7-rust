@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/s7", "crates/s7plus", "crates/s7napi"]
 
 [workspace.package]
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 license = "LGPL-3.0-only"
 authors = ["Oriol Rius"]
