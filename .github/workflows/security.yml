@@ -41,9 +41,10 @@ jobs:
     env:
       GITGUARDIAN_API_KEY: ${{ secrets.GITGUARDIAN_API_KEY }}
     steps:
-      - name: GITGUARDIAN_API_KEY is set
+      - name: Check the GitGuardian API key
         if: env.GITGUARDIAN_API_KEY == ''
-        run: echo "::warning::GitGuardian scan skipped: add the repository secret GITGUARDIAN_API_KEY (scope 'scan')"
+        run: |
+          echo "::warning::GitGuardian scan skipped. Add the repository secret GITGUARDIAN_API_KEY (scope scan)."
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.GITGUARDIAN_API_KEY != ''
         with:
