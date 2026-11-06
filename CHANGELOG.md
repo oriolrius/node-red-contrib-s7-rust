@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Node-API layer on `napi` 3 / `napi-derive` 3 (native API, no compat mode): results are
+  built by `ToNapiValue` types, callbacks are weak thread-safe functions, `status` is
+  converted with the `serde-json` feature instead of `JSON.parse`. The JS API and the
+  values are the same (byte-identical output against the fake PLCs).
+- `aes` 0.9 (`cipher` 0.5) for the S7CommPlus legitimation.
+
+### Added
+
+- Tests: NIST SP 800-38A known-answer test for AES-256-CBC; `test/addon.test.js` for the
+  shapes and value conversions at the Node-API boundary.
+
 ## [1.0.2] - 2026-11-06
 
 ### Security

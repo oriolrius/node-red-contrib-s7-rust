@@ -269,6 +269,19 @@ fn legitimation_crypto() {
     assert_eq!(st.get(crate::ids::ATTR_LEGIT_PAYLOAD_PASSWORD).unwrap().v, V::Bytes(sha1(b"pw").to_vec()));
 }
 
+#[test]
+fn aes256_cbc_nist_vectors() {
+    // NIST SP 800-38A, F.2.5 / F.2.6 (CBC-AES256), first two blocks.
+    let key: [u8; 32] = h("603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4").try_into().unwrap();
+    let iv = h("000102030405060708090a0b0c0d0e0f");
+    let pt = h("6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51");
+    let ct = h("f58c4c04d6e5f1ba779eabfb5f7bfbd69cfc4e967edb808d679f777bc6702c7d");
+    let enc = aes256_cbc_encrypt(&key, &iv, &pt);
+    assert_eq!(enc.len(), 48, "PKCS#7 adds one full block");
+    assert_eq!(hex(&enc[..32]), hex(&ct));
+    assert_eq!(hex(&aes256_cbc_decrypt(&key, &iv, &ct)), hex(&pt));
+}
+
 fn tcp_pair() -> (TcpStream, TcpStream) {
     let ln = TcpListener::bind("127.0.0.1:0").unwrap();
     let a = TcpStream::connect(ln.local_addr().unwrap()).unwrap();
