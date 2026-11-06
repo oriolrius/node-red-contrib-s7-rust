@@ -17,19 +17,25 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use napi::threadsafe_function::{ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode};
-use napi::{Env, JsDeferred, JsFunction, JsObject, JsUnknown, ValueType};
+use napi::bindgen_prelude::{Array, Either, FnArgs, Function, JsObjectValue, JsValue, Null, Object, ToNapiValue, Unknown};
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi::{sys, Env, JsDeferred, Status, ValueType};
 use napi_derive::napi;
 use s7::Val;
 
 use device::{Device, Out};
 
-type Resolver = Box<dyn FnOnce(Env) -> napi::Result<JsObject> + Send>;
-type Deferred = JsDeferred<JsObject, Resolver>;
-type UnknownDeferred = JsDeferred<JsUnknown, Box<dyn FnOnce(Env) -> napi::Result<JsUnknown> + Send>>;
-pub(crate) type StatusFn = ThreadsafeFunction<(String, String, String), ErrorStrategy::Fatal>;
-type DataFn = ThreadsafeFunction<DataEv, ErrorStrategy::Fatal>;
-pub(crate) type LogFn = ThreadsafeFunction<(String, String, String), ErrorStrategy::Fatal>;
+/// A promise settled from the connection thread; the value is built on the JS thread.
+type Deferred<T> = JsDeferred<T, Box<dyn FnOnce(Env) -> napi::Result<T> + Send>>;
+type StrArgs = (String, String, String);
+/// fn(a, b, c): no error argument, weak (does not keep Node alive), unbounded queue.
+type StrFn = ThreadsafeFunction<StrArgs, Unknown<'static>, FnArgs<StrArgs>, Status, false, true, 0>;
+pub(crate) type StatusFn = Arc<StrFn>;
+pub(crate) type LogFn = Arc<StrFn>;
+/// fn(event): weak, and a bounded queue: a slow JS side blocks the subscription
+/// thread (back-pressure) instead of growing memory.
+type DataFn = Arc<ThreadsafeFunction<DataEv, Unknown<'static>, DataEv, Status, false, true, 16>>;
+type JsStrFn<'a> = Function<'a, FnArgs<StrArgs>, Unknown<'static>>;
 
 /// A unit of work run on the connection thread.
 type Job = Box<dyn FnOnce(&dyn Device) + Send>;
@@ -39,7 +45,7 @@ enum Msg {
     Stop,
 }
 
-struct DataEv {
+pub struct DataEv {
     sub: String,
     conn: String,
     total: usize,
@@ -128,13 +134,89 @@ pub(crate) fn napi_err(e: impl std::fmt::Display) -> napi::Error {
     napi::Error::from_reason(e.to_string())
 }
 
-fn str_tsfn(env: &Env, f: JsFunction) -> napi::Result<ThreadsafeFunction<(String, String, String), ErrorStrategy::Fatal>> {
-    let mut t = f.create_threadsafe_function(0, |ctx: ThreadSafeCallContext<(String, String, String)>| {
-        let (a, b, c) = ctx.value;
-        Ok(vec![ctx.env.create_string(&a)?, ctx.env.create_string(&b)?, ctx.env.create_string(&c)?])
-    })?;
-    t.unref(env)?;
-    Ok(t)
+fn str_tsfn(f: JsStrFn<'_>) -> napi::Result<Arc<StrFn>> {
+    let t = f
+        .build_threadsafe_function::<StrArgs>()
+        .callee_handled::<false>()
+        .weak::<true>()
+        .build_callback(|ctx| Ok(FnArgs::from(ctx.value)))?;
+    Ok(Arc::new(t))
+}
+
+/// The data event: {sub, conn, vals, errs, idx?, ts, ms}.
+impl ToNapiValue for DataEv {
+    unsafe fn to_napi_value(raw: sys::napi_env, ev: Self) -> napi::Result<sys::napi_value> {
+        let env = Env::from_raw(raw);
+        let mut o = Object::new(&env)?;
+        o.set_named_property("sub", ev.sub)?;
+        o.set_named_property("conn", ev.conn)?;
+        let (vals, errs) = columns(&env, ev.vals.iter().map(|(_, r)| r))?;
+        o.set_named_property("vals", vals)?;
+        o.set_named_property("errs", errs)?;
+        if ev.vals.len() != ev.total {
+            o.set_named_property("idx", ev.vals.iter().map(|(i, _)| *i as u32).collect::<Vec<u32>>())?;
+        }
+        o.set_named_property("ts", ev.ts)?;
+        o.set_named_property("ms", ev.ms)?;
+        Ok(o.raw())
+    }
+}
+
+/// read() result: {vals, errs, nativeMs}.
+struct ReadRes {
+    outs: Vec<Out>,
+    ms: f64,
+}
+
+impl ToNapiValue for ReadRes {
+    unsafe fn to_napi_value(raw: sys::napi_env, r: Self) -> napi::Result<sys::napi_value> {
+        let env = Env::from_raw(raw);
+        let (vals, errs) = columns(&env, r.outs.iter())?;
+        let mut o = Object::new(&env)?;
+        o.set_named_property("vals", vals)?;
+        o.set_named_property("errs", errs)?;
+        o.set_named_property("nativeMs", r.ms)?;
+        Ok(o.raw())
+    }
+}
+
+/// write() result: {errs: [[i, message]], nativeMs}.
+struct WriteRes {
+    errs: Vec<Option<String>>,
+    ms: f64,
+}
+
+impl ToNapiValue for WriteRes {
+    unsafe fn to_napi_value(raw: sys::napi_env, r: Self) -> napi::Result<sys::napi_value> {
+        let env = Env::from_raw(raw);
+        let mut arr = env.create_array(0)?;
+        for (i, e) in r.errs.into_iter().enumerate() {
+            if let Some(e) = e {
+                arr.insert(err_pair(&env, i, &e)?)?;
+            }
+        }
+        let mut o = Object::new(&env)?;
+        o.set_named_property("errs", arr)?;
+        o.set_named_property("nativeMs", r.ms)?;
+        Ok(o.raw())
+    }
+}
+
+/// subscribe() result: [{tag, error}].
+struct BadTags(Vec<(String, String)>);
+
+impl ToNapiValue for BadTags {
+    unsafe fn to_napi_value(raw: sys::napi_env, b: Self) -> napi::Result<sys::napi_value> {
+        let env = Env::from_raw(raw);
+        let mut arr = env.create_array(b.0.len() as u32)?;
+        for (i, (t, e)) in b.0.into_iter().enumerate() {
+            let mut o = Object::new(&env)?;
+            o.set_named_property("tag", t)?;
+            o.set_named_property("error", e)?;
+            arr.set(i as u32, o)?;
+        }
+        Ok(arr.raw())
+    }
 }
 
 #[napi]
@@ -142,35 +224,19 @@ impl S7Native {
     /// onStatus(conn, state, detail); onData(event); onLog(conn, level, message) optional.
     /// All are unref'd: they do not keep Node alive on their own.
     #[napi(constructor)]
-    pub fn new(env: Env, on_status: JsFunction, on_data: JsFunction, on_log: Option<JsFunction>) -> napi::Result<Self> {
-        let st = str_tsfn(&env, on_status)?;
+    pub fn new(
+        on_status: JsStrFn<'_>,
+        #[napi(ts_arg_type = "(event: any) => void")] on_data: Function<'_, DataEv, Unknown<'static>>,
+        on_log: Option<JsStrFn<'_>>,
+    ) -> napi::Result<Self> {
+        let st = str_tsfn(on_status)?;
         let lg = match on_log {
-            Some(f) => Some(str_tsfn(&env, f)?),
+            Some(f) => Some(str_tsfn(f)?),
             None => None,
         };
-        // A bounded queue: a slow JS side blocks the subscription thread (back-pressure)
-        // instead of growing memory.
-        let mut dt: DataFn = on_data.create_threadsafe_function(16, |ctx: ThreadSafeCallContext<DataEv>| {
-            let ev = ctx.value;
-            let env = ctx.env;
-            let mut o = env.create_object()?;
-            o.set_named_property("sub", env.create_string(&ev.sub)?)?;
-            o.set_named_property("conn", env.create_string(&ev.conn)?)?;
-            let (vals, errs) = columns(&env, ev.vals.iter().map(|(_, r)| r))?;
-            o.set_named_property("vals", vals)?;
-            o.set_named_property("errs", errs)?;
-            if ev.vals.len() != ev.total {
-                let mut idx = env.create_array_with_length(ev.vals.len())?;
-                for (k, (i, _)) in ev.vals.iter().enumerate() {
-                    idx.set_element(k as u32, env.create_uint32(*i as u32)?)?;
-                }
-                o.set_named_property("idx", idx)?;
-            }
-            o.set_named_property("ts", env.create_string(&ev.ts)?)?;
-            o.set_named_property("ms", env.create_double(ev.ms)?)?;
-            Ok(vec![o])
-        })?;
-        dt.unref(&env)?;
+        let dt: DataFn = Arc::new(
+            on_data.build_threadsafe_function::<DataEv>().callee_handled::<false>().weak::<true>().max_queue_size::<16>().build()?,
+        );
         Ok(S7Native { conns: Mutex::new(HashMap::new()), subs: Mutex::new(HashMap::new()), on_status: st, on_data: dt, on_log: lg })
     }
 
@@ -208,9 +274,9 @@ impl S7Native {
 
     /// read(conn, tags) -> Promise<{vals, errs: [[i, message]], nativeMs}>
     #[napi(ts_return_type = "Promise<any>")]
-    pub fn read(&self, env: Env, conn: String, tags: Vec<String>) -> napi::Result<JsObject> {
+    pub fn read<'e>(&self, env: &'e Env, conn: String, tags: Vec<String>) -> napi::Result<Object<'e>> {
         let tx = self.sender(&conn)?;
-        let (d, promise): (Deferred, JsObject) = env.create_deferred()?;
+        let (d, promise): (Deferred<ReadRes>, Object) = env.create_deferred()?;
         let job: Job = Box::new(move |dev| {
             let t0 = Instant::now();
             let (outs, err) = dev.read(&tags);
@@ -218,14 +284,7 @@ impl S7Native {
             match err {
                 // a transport error with no per-tag data rejects; per-tag errors resolve
                 Some(e) if outs.iter().all(|o| o.val.is_none()) => d.reject(napi_err(e)),
-                _ => d.resolve(Box::new(move |env: Env| {
-                    let (vals, errs) = columns(&env, outs.iter())?;
-                    let mut o = env.create_object()?;
-                    o.set_named_property("vals", vals)?;
-                    o.set_named_property("errs", errs)?;
-                    o.set_named_property("nativeMs", env.create_double(ms)?)?;
-                    Ok(o)
-                })),
+                _ => d.resolve(Box::new(move |_| Ok(ReadRes { outs, ms }))),
             }
         });
         tx.send(Msg::Job(job)).map_err(|_| napi_err("connection closed"))?;
@@ -234,12 +293,12 @@ impl S7Native {
 
     /// write(conn, tags, values) -> Promise<{errs: [[i, message]], nativeMs}>
     #[napi(ts_return_type = "Promise<any>")]
-    pub fn write(&self, env: Env, conn: String, tags: Vec<String>, values: JsObject) -> napi::Result<JsObject> {
+    pub fn write<'e>(&self, env: &'e Env, conn: String, tags: Vec<String>, values: Vec<Unknown<'e>>) -> napi::Result<Object<'e>> {
         let tx = self.sender(&conn)?;
         let mut list = Vec::with_capacity(tags.len());
         let mut pre: Vec<Option<String>> = vec![None; tags.len()];
         for (i, tag) in tags.into_iter().enumerate() {
-            match js_to_val(values.get_element::<JsUnknown>(i as u32)?) {
+            match values.get(i).map_or(Err("value is missing".to_string()), js_to_val) {
                 Ok(v) => list.push((tag, v)),
                 Err(e) => {
                     pre[i] = Some(format!("{tag}: {e}"));
@@ -247,7 +306,7 @@ impl S7Native {
                 }
             }
         }
-        let (d, promise): (Deferred, JsObject) = env.create_deferred()?;
+        let (d, promise): (Deferred<WriteRes>, Object) = env.create_deferred()?;
         let job: Job = Box::new(move |dev| {
             let t0 = Instant::now();
             // values that did not convert are not sent
@@ -262,23 +321,7 @@ impl S7Native {
                     for (k, (i, _)) in send.iter().enumerate() {
                         all[*i] = errs.get(k).cloned().flatten();
                     }
-                    d.resolve(Box::new(move |env: Env| {
-                        let mut arr = env.create_array_with_length(0)?;
-                        let mut ne = 0u32;
-                        for (i, e) in all.iter().enumerate() {
-                            if let Some(e) = e {
-                                let mut pair = env.create_array_with_length(2)?;
-                                pair.set_element(0, env.create_uint32(i as u32)?)?;
-                                pair.set_element(1, env.create_string(e)?)?;
-                                arr.set_element(ne, pair)?;
-                                ne += 1;
-                            }
-                        }
-                        let mut o = env.create_object()?;
-                        o.set_named_property("errs", arr)?;
-                        o.set_named_property("nativeMs", env.create_double(ms)?)?;
-                        Ok(o)
-                    }))
+                    d.resolve(Box::new(move |_| Ok(WriteRes { errs: all, ms })))
                 }
             }
         });
@@ -289,7 +332,7 @@ impl S7Native {
     /// subscribe({conn, sub, tags, intervalMs, onChange, condTag, condIntervalMs})
     /// -> Promise<[{tag, error}]> (tags that do not parse; they are read as bad values)
     #[napi(ts_return_type = "Promise<any>")]
-    pub fn subscribe(&self, env: Env, p: SubParams) -> napi::Result<JsObject> {
+    pub fn subscribe<'e>(&self, env: &'e Env, p: SubParams) -> napi::Result<Object<'e>> {
         if p.sub.is_empty() || p.tags.is_empty() {
             return Err(napi_err("subscribe: sub and tags are required"));
         }
@@ -317,23 +360,14 @@ impl S7Native {
         std::thread::Builder::new().name(format!("s7sub-{}", p.sub)).spawn(move || sub_loop(cfg, tx2, s2, data)).map_err(napi_err)?;
         self.subs.lock().unwrap().insert(p.sub, SubHandle { conn: p.conn, stop });
         // check the tags on the connection thread (S7CommPlus symbols need the PLC)
-        let (d, promise): (Deferred, JsObject) = env.create_deferred()?;
+        let (d, promise): (Deferred<BadTags>, Object) = env.create_deferred()?;
         let mut tags = p.tags;
         if let Some(c) = p.cond_tag.filter(|s| !s.is_empty()) {
             tags.push(c);
         }
         let job: Job = Box::new(move |dev| {
             let bad: Vec<(String, String)> = tags.iter().filter_map(|t| dev.check_tag(t).map(|e| (t.clone(), e))).collect();
-            d.resolve(Box::new(move |env: Env| {
-                let mut arr = env.create_array_with_length(bad.len())?;
-                for (i, (t, e)) in bad.iter().enumerate() {
-                    let mut o = env.create_object()?;
-                    o.set_named_property("tag", env.create_string(t)?)?;
-                    o.set_named_property("error", env.create_string(e)?)?;
-                    arr.set_element(i as u32, o)?;
-                }
-                Ok(arr)
-            }))
+            d.resolve(Box::new(move |_| Ok(BadTags(bad))))
         });
         tx.send(Msg::Job(job)).map_err(|_| napi_err("connection closed"))?;
         Ok(promise)
@@ -349,40 +383,29 @@ impl S7Native {
 
     /// status(conn) -> Promise<{conn, protocol, addr, state, detail, pdu, reconnects, requests, errors, p50ms, p95ms, p99ms, rate1m}>
     #[napi(ts_return_type = "Promise<any>")]
-    pub fn status(&self, env: Env, conn: String) -> napi::Result<JsObject> {
+    pub fn status<'e>(&self, env: &'e Env, conn: String) -> napi::Result<Object<'e>> {
         self.call_json(env, conn, "status".into(), None)
     }
 
     /// call(conn, action, argsJson?) -> Promise<string (JSON)>. Diagnostics and
     /// browsing: see device::Device::call for the actions of each protocol.
     #[napi(ts_return_type = "Promise<string>")]
-    pub fn call(&self, env: Env, conn: String, action: String, args: Option<String>) -> napi::Result<JsObject> {
+    pub fn call<'e>(&self, env: &'e Env, conn: String, action: String, args: Option<String>) -> napi::Result<Object<'e>> {
         self.call_json(env, conn, action, args)
     }
 
-    fn call_json(&self, env: Env, conn: String, action: String, args: Option<String>) -> napi::Result<JsObject> {
+    fn call_json<'e>(&self, env: &'e Env, conn: String, action: String, args: Option<String>) -> napi::Result<Object<'e>> {
         let tx = self.sender(&conn)?;
         let args: serde_json::Value = match args.as_deref() {
             None | Some("") => serde_json::Value::Null,
             Some(s) => serde_json::from_str(s).map_err(|e| napi_err(format!("{action}: bad args: {e}")))?,
         };
-        let (d, promise): (UnknownDeferred, JsObject) = env.create_deferred()?;
+        let (d, promise): (Deferred<Either<serde_json::Value, String>>, Object) = env.create_deferred()?;
         let job: Job = Box::new(move |dev| match dev.call(&action, &args) {
             Err(e) => d.reject(napi_err(format!("{action}: {e}"))),
-            Ok(v) => {
-                let text = v.to_string();
-                let is_status = action == "status";
-                d.resolve(Box::new(move |env: Env| {
-                    if is_status {
-                        // status is used by the editor: hand an object, not text
-                        let json: JsObject = env.get_global()?.get_named_property("JSON")?;
-                        let parse: JsFunction = json.get_named_property("parse")?;
-                        parse.call(Some(&json), &[env.create_string(&text)?])
-                    } else {
-                        Ok(env.create_string(&text)?.into_unknown())
-                    }
-                }))
-            }
+            // status is used by the editor: hand an object; the other actions return JSON text
+            Ok(v) if action == "status" => d.resolve(Box::new(move |_| Ok(Either::A(v)))),
+            Ok(v) => d.resolve(Box::new(move |_| Ok(Either::B(v.to_string())))),
         });
         tx.send(Msg::Job(job)).map_err(|_| napi_err("connection closed"))?;
         Ok(promise)
@@ -399,47 +422,54 @@ impl S7Native {
 }
 
 /// Columnar result: vals[i] (null when bad) and errs = [[i, message], ...].
-fn columns<'a>(env: &Env, outs: impl ExactSizeIterator<Item = &'a Out>) -> napi::Result<(JsObject, JsObject)> {
-    let mut vals = env.create_array_with_length(outs.len())?;
-    let mut errs = env.create_array_with_length(0)?;
-    let mut ne = 0u32;
+fn columns<'e, 'a>(env: &'e Env, outs: impl ExactSizeIterator<Item = &'a Out>) -> napi::Result<(Array<'e>, Array<'e>)> {
+    let mut vals = env.create_array(outs.len() as u32)?;
+    let mut errs = env.create_array(0)?;
     for (i, r) in outs.enumerate() {
         match (&r.val, &r.err) {
-            (Some(v), None) => vals.set_element(i as u32, val_to_js(env, v)?)?,
+            (Some(v), None) => vals.set(i as u32, JsVal(v))?,
             (_, e) => {
-                vals.set_element(i as u32, env.get_null()?)?;
-                let mut pair = env.create_array_with_length(2)?;
-                pair.set_element(0, env.create_uint32(i as u32)?)?;
-                pair.set_element(1, env.create_string(e.as_deref().unwrap_or("bad"))?)?;
-                errs.set_element(ne, pair)?;
-                ne += 1;
+                vals.set(i as u32, Null)?;
+                errs.insert(err_pair(env, i, e.as_deref().unwrap_or("bad"))?)?;
             }
         }
     }
     Ok((vals, errs))
 }
 
-fn val_to_js(env: &Env, v: &Val) -> napi::Result<JsUnknown> {
-    Ok(match v {
-        Val::Null => env.get_null()?.into_unknown(),
-        Val::Bool(b) => env.get_boolean(*b)?.into_unknown(),
-        Val::Int(i) => env.create_int64(*i)?.into_unknown(),
-        Val::Float(f) => env.create_double(*f)?.into_unknown(),
-        Val::Str(s) => env.create_string(s)?.into_unknown(),
-        Val::List(l) => {
-            let mut a = env.create_array_with_length(l.len())?;
-            for (i, x) in l.iter().enumerate() {
-                a.set_element(i as u32, val_to_js(env, x)?)?;
-            }
-            a.into_unknown()
-        }
-    })
+/// [i, message]
+fn err_pair<'e>(env: &'e Env, i: usize, e: &str) -> napi::Result<Array<'e>> {
+    let mut pair = env.create_array(2)?;
+    pair.set(0, i as u32)?;
+    pair.set(1, e)?;
+    Ok(pair)
 }
 
-fn js_to_val(v: JsUnknown) -> Result<Val, String> {
+/// An S7 value as a JS value (lists become arrays).
+struct JsVal<'a>(&'a Val);
+
+impl ToNapiValue for JsVal<'_> {
+    unsafe fn to_napi_value(env: sys::napi_env, v: Self) -> napi::Result<sys::napi_value> {
+        unsafe {
+            match v.0 {
+                Val::Null => Null::to_napi_value(env, Null),
+                Val::Bool(b) => bool::to_napi_value(env, *b),
+                Val::Int(i) => i64::to_napi_value(env, *i),
+                Val::Float(f) => f64::to_napi_value(env, *f),
+                Val::Str(s) => <&str>::to_napi_value(env, s.as_str()),
+                Val::List(l) => Vec::to_napi_value(env, l.iter().map(JsVal).collect::<Vec<_>>()),
+            }
+        }
+    }
+}
+
+fn js_to_val(v: &Unknown<'_>) -> Result<Val, String> {
     let e = |e: napi::Error| e.reason;
+    let text = |v: Unknown<'_>| -> Result<String, String> {
+        Ok(v.coerce_to_string().map_err(e)?.into_utf8().map_err(e)?.as_str().map_err(e)?.to_owned())
+    };
     match v.get_type().map_err(e)? {
-        ValueType::Boolean => Ok(Val::Bool(v.coerce_to_bool().map_err(e)?.get_value().map_err(e)?)),
+        ValueType::Boolean => Ok(Val::Bool(v.coerce_to_bool().map_err(e)?)),
         ValueType::Number => {
             let f = v.coerce_to_number().map_err(e)?.get_double().map_err(e)?;
             if f.fract() == 0.0 && f.abs() < 9.007_199_254_740_992e15 {
@@ -448,24 +478,22 @@ fn js_to_val(v: JsUnknown) -> Result<Val, String> {
                 Ok(Val::Float(f))
             }
         }
-        ValueType::String | ValueType::BigInt => {
-            Ok(Val::Str(v.coerce_to_string().map_err(e)?.into_utf8().map_err(e)?.into_owned().map_err(e)?))
-        }
+        ValueType::String | ValueType::BigInt => Ok(Val::Str(text(*v)?)),
         ValueType::Object => {
             if v.is_array().map_err(e)? || v.is_buffer().map_err(e)? || v.is_typedarray().map_err(e)? {
-                // SAFETY-free cast: napi's JsUnknown -> JsObject for arrays is checked above
-                let o: JsObject = unsafe { v.cast() };
-                let n = o.get_named_property::<JsUnknown>("length").map_err(e)?.coerce_to_number().map_err(e)?.get_uint32().map_err(e)?;
+                // checked above: an array-like object
+                let o: Object<'_> = unsafe { v.cast() }.map_err(e)?;
+                let n: u32 =
+                    o.get_named_property::<Unknown>("length").map_err(e)?.coerce_to_number().map_err(e)?.get_uint32().map_err(e)?;
                 let mut l = Vec::with_capacity(n as usize);
                 for i in 0..n {
-                    l.push(js_to_val(o.get_element::<JsUnknown>(i).map_err(e)?)?);
+                    l.push(js_to_val(&o.get_element::<Unknown>(i).map_err(e)?)?);
                 }
                 Ok(Val::List(l))
             } else if v.is_date().map_err(e)? {
-                let o: JsObject = unsafe { v.cast() };
-                let f: JsFunction = o.get_named_property("toISOString").map_err(e)?;
-                let s = f.call_without_args(Some(&o)).map_err(e)?;
-                Ok(Val::Str(s.coerce_to_string().map_err(e)?.into_utf8().map_err(e)?.into_owned().map_err(e)?))
+                let o: Object<'_> = unsafe { v.cast() }.map_err(e)?;
+                let f: Function<'_, (), Unknown> = o.get_named_property("toISOString").map_err(e)?;
+                Ok(Val::Str(text(f.apply(o, ()).map_err(e)?)?))
             } else {
                 Err("objects are not S7 values".into())
             }

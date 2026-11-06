@@ -3,7 +3,7 @@
 
 use std::fmt;
 
-use aes::cipher::{BlockEncrypt, KeyInit};
+use aes::cipher::{BlockCipherEncrypt, KeyInit};
 
 use crate::client::Client;
 use crate::error::{Error, Result};
@@ -161,7 +161,7 @@ pub fn legitimation_payload(password: &str, username: &str) -> Vec<u8> {
 
 /// AES-256-CBC encryption with PKCS#7 padding.
 pub(crate) fn aes256_cbc_encrypt(key: &[u8; 32], iv: &[u8], pt: &[u8]) -> Vec<u8> {
-    let c = aes::Aes256::new(key.into());
+    let c = aes::Aes256::new(&(*key).into());
     let pad = 16 - pt.len() % 16;
     let mut data = pt.to_vec();
     data.resize(data.len() + pad, pad as u8);
@@ -170,7 +170,7 @@ pub(crate) fn aes256_cbc_encrypt(key: &[u8; 32], iv: &[u8], pt: &[u8]) -> Vec<u8
         for i in 0..16 {
             chunk[i] ^= prev[i];
         }
-        let blk = aes::Block::from_mut_slice(chunk);
+        let blk = <&mut aes::Block>::try_from(&mut *chunk).expect("16-byte block");
         c.encrypt_block(blk);
         prev.copy_from_slice(chunk);
     }
@@ -180,13 +180,13 @@ pub(crate) fn aes256_cbc_encrypt(key: &[u8; 32], iv: &[u8], pt: &[u8]) -> Vec<u8
 /// AES-256-CBC decryption (no padding removal); used by the fake PLC.
 #[allow(dead_code)]
 pub(crate) fn aes256_cbc_decrypt(key: &[u8; 32], iv: &[u8], ct: &[u8]) -> Vec<u8> {
-    use aes::cipher::BlockDecrypt;
-    let c = aes::Aes256::new(key.into());
+    use aes::cipher::BlockCipherDecrypt;
+    let c = aes::Aes256::new(&(*key).into());
     let mut prev: [u8; 16] = iv[..16].try_into().unwrap();
     let mut out = ct.to_vec();
     for chunk in out.chunks_mut(16) {
         let cur: [u8; 16] = chunk.try_into().unwrap_or([0; 16]);
-        let blk = aes::Block::from_mut_slice(chunk);
+        let blk = <&mut aes::Block>::try_from(&mut *chunk).expect("16-byte block");
         c.decrypt_block(blk);
         for i in 0..16 {
             chunk[i] ^= prev[i];
