@@ -125,6 +125,7 @@ pub fn parse_node_s7(s: &str) -> Result<Tag> {
                     return Err(local(format!("{s}: invalid array length")));
                 }
                 tag.elems = n as usize;
+                crate::addr::check_tc(s, off, tag.elems)?;
                 if letter == b'T' {
                     tag.typ = Type::S5Time;
                     tag.item = Item::timers(off as u32, n as u16);
@@ -169,6 +170,7 @@ pub fn parse_node_s7(s: &str) -> Result<Tag> {
             if f5 > 1 {
                 return Err(local(format!("{s}: bit arrays are not supported")));
             }
+            crate::addr::check_bytes(s, off, 1)?;
             tag.item = Item::bit(area, db as u16, off as u32, f4 as u8);
             return Ok(tag);
         }
@@ -197,6 +199,7 @@ pub fn parse_node_s7(s: &str) -> Result<Tag> {
     if total > 0xffff {
         return Err(local(format!("{s}: too large")));
     }
+    crate::addr::check_bytes(s, off, total)?;
     tag.item = Item::bytes(area, db as u16, off as u32, total as u16);
     Ok(tag)
 }

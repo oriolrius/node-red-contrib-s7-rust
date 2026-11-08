@@ -40,10 +40,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { node: '20', node-red: '4' }
-          - { node: '22', node-red: '4' }
-          - { node: '22', node-red: '5' }
-          - { node: '24', node-red: '5' }
+          - { node: '20', node-red: '4', module: node-red-4 }
+          - { node: '22', node-red: '4', module: node-red-4 }
+          - { node: '22', node-red: '5', module: node-red }
+          - { node: '24', node-red: '5', module: node-red }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,9 +55,13 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
+      # both Node-RED majors are in package-lock.json (node-red, and the alias node-red-4)
       - run: npm ci
-      - run: npm install --no-save --no-audit --no-fund "node-red@${{ matrix.node-red }}"
+      - name: Node-RED version under test
+        run: node -p "require('${{ matrix.module }}/package.json').version"
       - run: npm run test:node
+        env:
+          S7RS_NODE_RED: ${{ matrix.module }}
 
   package:
     name: Package (glibc 2.28 + musl binaries, smoke tests, scorecard)
@@ -74,7 +78,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '22'
-      - run: pip install cargo-zigbuild==0.24.1
+      - run: pip install --require-hashes --no-deps -r .github/requirements/zigbuild.txt
       - run: npm run build:release
       - name: Smoke test in glibc and musl containers
         run: |
@@ -88,4 +92,4 @@ jobs:
           path: '*.tgz'
       - name: Node-RED scorecard (node-red-dev validate)
         continue-on-error: true
-        run: npx --yes node-red-dev@latest validate -p .
+        run: npx --yes node-red-dev@0.1.6 validate -p .

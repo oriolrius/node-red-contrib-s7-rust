@@ -11,6 +11,8 @@ publish.workspace = true
 [features]
 # In-process fake S7 CPU (test support, also for other crates' tests).
 fakecpu = []
+# Fuzz entry points (fuzz/ crate only).
+fuzzing = []
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }

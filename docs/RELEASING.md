@@ -29,10 +29,15 @@ Node-RED Flow Library (flows.nodered.org, the palette manager catalogue).
 | `security.yml` | push, pull request, weekly | gitleaks, GitGuardian (`ggshield`), `cargo audit` (RustSec), `npm audit` of runtime dependencies, dependency review of pull requests |
 | `codeql.yml` | push, pull request, weekly | CodeQL for Rust, JavaScript and the workflows |
 | `scorecard.yml` | push, weekly | OpenSSF Scorecard (public score, code scanning alerts) |
+| `fuzz.yml` | push, pull request (parser changes), weekly | cargo-fuzz on the PLC reply and tag address parsers: 60 s per target, 10 min weekly |
 | `release.yml` | tag `vX.Y.Z` | tests, binaries, npm publish with provenance, GitHub release |
 
 Dependabot (`.github/dependabot.yml`) opens weekly updates for Cargo and npm, and monthly
-updates for the pinned GitHub Actions (the workflows pin each action to a commit SHA).
+updates for the pinned GitHub Actions (the workflows pin each action to a commit SHA) and for
+`.github/requirements/zigbuild.txt` (cargo-zigbuild, pinned by hash: regenerate it with
+`uv pip compile --generate-hashes --python-version 3.12 .github/requirements/zigbuild.in -o .github/requirements/zigbuild.txt`).
+
+Rulesets: `main` and the `v*` tags cannot be deleted or force-pushed; release tags cannot move.
 
 ## Each release
 

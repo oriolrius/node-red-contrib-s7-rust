@@ -5,7 +5,7 @@
 #   sh scripts/build.sh release     both published binaries:
 #                                     gnu  (glibc >= 2.28, cargo-zigbuild) -> bin/linux-x64-gnu/
 #                                     musl (Alpine, e.g. nodered/node-red)  -> bin/linux-x64-musl/
-# release needs cargo-zigbuild: "pip install cargo-zigbuild==0.24.1" or uv (uvx is used when it is not on PATH).
+# release needs cargo-zigbuild: "pip install --require-hashes --no-deps -r .github/requirements/zigbuild.txt" or uv (uvx is used when it is not on PATH).
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"

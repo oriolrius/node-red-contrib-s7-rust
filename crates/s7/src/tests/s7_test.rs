@@ -123,3 +123,42 @@ fn types_round_trip() {
     // S5TIME: base 1 (100 ms) * 123 = 12300 ms.
     assert_eq!(s5time_to_ms(&[0x11, 0x23]).unwrap(), 12300);
 }
+
+/// The 24-bit address field holds byte * 8 + bit: an offset past 0x1FFFFF
+/// would wrap to another address. Timer/counter numbers and counts are 16-bit.
+/// (Found by the s7_tag_value fuzz target.)
+#[test]
+fn address_limits() {
+    use crate::addr::{parse_siemens, MAX_BYTE_OFFSET};
+    use crate::nodes7addr::parse_node_s7;
+    for ok in ["DB1.DBB2097151", "DB1.DBX2097151.7", "MB2097148:dint", "T65535", "C0[32767]", "T5[100]"] {
+        assert!(parse_tag(ok).is_ok(), "{ok} must parse");
+    }
+    for ok in ["DB1,B2097151", "MB2097151", "T5.32767", "C65535"] {
+        assert!(parse_node_s7(ok).is_ok(), "{ok} must parse");
+    }
+    let t = parse_tag("DB1.DBB2097151").unwrap();
+    assert_eq!(t.item.start as i64, MAX_BYTE_OFFSET);
+    assert_eq!(hex(&t.item.encode()[9..]), "fffff8");
+    for bad in [
+        "DB1.DBB2097152",
+        "DB1.DBX2097152.0",
+        "MB2097150:dint",
+        "DB1.DBB2097000[200]",
+        "MB99999999",
+        "M99999999.1",
+        "T65536",
+        "C99999999",
+        "T5[32768]",
+        "T65535[2]",
+        "T5[70000]",
+    ] {
+        let e = parse_siemens(bad).expect_err(bad).to_string();
+        assert!(e.contains("out of range"), "{bad}: {e}");
+    }
+    assert!(parse_tag("M0.8").is_err(), "bit 8");
+    for bad in ["DB1,B2097152", "DB1,X2097152.0", "DB1,REAL2097150", "MB99999999", "T5.70000", "T65536", "C5.40000"] {
+        let e = parse_node_s7(bad).expect_err(bad).to_string();
+        assert!(e.contains("out of range"), "{bad}: {e}");
+    }
+}

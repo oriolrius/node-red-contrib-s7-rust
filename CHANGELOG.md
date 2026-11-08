@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Tag addresses out of the S7 address range are now an error. Before, a byte offset past
+  2097151 (`DB1.DBB2097152`) wrapped in the 24-bit address field and reached another address
+  (`DB1.DBB0`), a timer/counter number past 65535 lost its high bits, and a count past
+  32767 (`T5[70000]`) was cut (and a very large one made the decoder panic). All three
+  address syntaxes check the range.
+
+### Added
+
+- Fuzzing: cargo-fuzz targets for S7comm replies (COTP, S7 header, ReadVar data,
+  Userdata), tag addresses and values, block information and clock, S7CommPlus PDU
+  reassembly, messages, values, objects, notifications, alarm texts and comment blobs
+  (`fuzz/`, CI workflow `fuzz.yml`).
+
+### Changed
+
+- CI: cargo-zigbuild installed from a hash-pinned requirements file; Node-RED 4 tests use the
+  locked alias `node-red-4` (no unpinned `npm install`); `node-red-dev` pinned; SECURITY.md
+  links the private reporting form.
+
 ## [1.0.3] - 2026-11-06
 
 ### Changed

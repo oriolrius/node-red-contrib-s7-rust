@@ -266,6 +266,64 @@ impl Item {
 /// Outcome of one item: its data or the CPU's item error.
 pub type ItemResult = std::result::Result<Vec<u8>, Error>;
 
+// ---- reply parsing (pure: also the fuzz entry points) -----------------------------
+
+/// Parses one TPKT body (COTP DT + S7 PDU). The ranges index `b`.
+pub(crate) fn parse_reply(b: &[u8]) -> Result<Reply> {
+    if b.len() < 3 || b[1] != 0xF0 {
+        return Err(io(format!("not a COTP DT: {}", hex_spaced(b))));
+    }
+    let s7 = &b[3..];
+    if s7.len() < 10 || s7[0] != 0x32 {
+        return Err(io(format!("not an S7 PDU: {}", hex_spaced(s7))));
+    }
+    let rosctr = s7[1];
+    let par_len = u16::from_be_bytes([s7[6], s7[7]]) as usize;
+    let data_len = u16::from_be_bytes([s7[8], s7[9]]) as usize;
+    let mut hdr = 10;
+    if rosctr == 0x02 || rosctr == 0x03 {
+        hdr = 12;
+        if s7.len() < 12 {
+            return Err(io("short Ack-Data header"));
+        }
+        if s7[10] != 0 || s7[11] != 0 {
+            return Err(Error::Proto(s7[10], s7[11]));
+        }
+    }
+    if s7.len() < hdr + par_len + data_len {
+        return Err(io("truncated S7 PDU"));
+    }
+    let p0 = 3 + hdr;
+    Ok(Reply { rosctr, param: p0..p0 + par_len, data: p0 + par_len..p0 + par_len + data_len })
+}
+
+/// Splits the data part of a ReadVar reply into `n` item results.
+pub(crate) fn parse_read_data(d: &[u8], n: usize, mut put: impl FnMut(usize, std::result::Result<&[u8], Error>)) -> Result<()> {
+    let mut p = 0;
+    for i in 0..n {
+        if p + 4 > d.len() {
+            return Err(io(format!("truncated reply at item {i}")));
+        }
+        let (ret, tsize) = (d[p], d[p + 1]);
+        let ln = u16::from_be_bytes([d[p + 2], d[p + 3]]) as usize;
+        p += 4;
+        if ret != 0xFF {
+            put(i, Err(Error::Item(ret))); // an error item carries no data
+            continue;
+        }
+        let k = if tsize == DT_BIT || tsize == DT_BYTE || tsize == 0x05 { ln.div_ceil(8) } else { ln };
+        if p + k > d.len() {
+            return Err(io(format!("truncated data at item {i}")));
+        }
+        put(i, Ok(&d[p..p + k]));
+        p += k;
+        if k % 2 != 0 && i < n - 1 {
+            p += 1; // fill byte between items
+        }
+    }
+    Ok(())
+}
+
 // ---- connection -------------------------------------------------------------------
 
 /// A parsed S7 response (ranges index the connection's receive buffer).
@@ -449,32 +507,8 @@ impl Conn {
         if let Some(t) = &self.trace {
             t("rx", &self.buf[body.clone()]);
         }
-        let b = &self.buf[body];
-        if b.len() < 3 || b[1] != 0xF0 {
-            return Err(io(format!("not a COTP DT: {}", hex_spaced(b))));
-        }
-        let s7 = &b[3..];
-        if s7.len() < 10 || s7[0] != 0x32 {
-            return Err(io(format!("not an S7 PDU: {}", hex_spaced(s7))));
-        }
-        let rosctr = s7[1];
-        let par_len = u16::from_be_bytes([s7[6], s7[7]]) as usize;
-        let data_len = u16::from_be_bytes([s7[8], s7[9]]) as usize;
-        let mut hdr = 10;
-        if rosctr == 0x02 || rosctr == 0x03 {
-            hdr = 12;
-            if s7.len() < 12 {
-                return Err(io("short Ack-Data header"));
-            }
-            if s7[10] != 0 || s7[11] != 0 {
-                return Err(Error::Proto(s7[10], s7[11]));
-            }
-        }
-        if s7.len() < hdr + par_len + data_len {
-            return Err(io("truncated S7 PDU"));
-        }
-        let p0 = 3 + hdr;
-        Ok(Reply { rosctr, param: p0..p0 + par_len, data: p0 + par_len..p0 + par_len + data_len })
+        // the TPKT body starts at offset 0 of self.buf
+        parse_reply(&self.buf[body])
     }
 
     /// round_trip with the reply copied out.
@@ -543,7 +577,7 @@ impl Conn {
         Ok(out)
     }
 
-    fn read_batch(&mut self, items: &[Item], mut put: impl FnMut(usize, std::result::Result<&[u8], Error>)) -> Result<()> {
+    fn read_batch(&mut self, items: &[Item], put: impl FnMut(usize, std::result::Result<&[u8], Error>)) -> Result<()> {
         let mut param = Vec::with_capacity(2 + 12 * items.len());
         param.extend_from_slice(&[0x04, items.len() as u8]);
         for it in items {
@@ -554,30 +588,7 @@ impl Conn {
         if r.rosctr != 0x03 || pr.len() < 2 || pr[0] != 0x04 {
             return Err(io(format!("unexpected read reply rosctr=0x{:02x} param={}", r.rosctr, hex_spaced(pr))));
         }
-        let d = &self.buf[r.data];
-        let mut p = 0;
-        for i in 0..items.len() {
-            if p + 4 > d.len() {
-                return Err(io(format!("truncated reply at item {i}")));
-            }
-            let (ret, tsize) = (d[p], d[p + 1]);
-            let ln = u16::from_be_bytes([d[p + 2], d[p + 3]]) as usize;
-            p += 4;
-            if ret != 0xFF {
-                put(i, Err(Error::Item(ret))); // an error item carries no data
-                continue;
-            }
-            let n = if tsize == DT_BIT || tsize == DT_BYTE || tsize == 0x05 { ln.div_ceil(8) } else { ln };
-            if p + n > d.len() {
-                return Err(io(format!("truncated data at item {i}")));
-            }
-            put(i, Ok(&d[p..p + n]));
-            p += n;
-            if n % 2 != 0 && i < items.len() - 1 {
-                p += 1; // fill byte between items
-            }
-        }
-        Ok(())
+        parse_read_data(&self.buf[r.data], items.len(), put)
     }
 
     // ---- write ----------------------------------------------------------------
