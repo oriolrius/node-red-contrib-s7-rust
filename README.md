@@ -5,6 +5,8 @@
 [![Security](https://github.com/oriolrius/node-red-contrib-s7-rust/actions/workflows/security.yml/badge.svg)](https://github.com/oriolrius/node-red-contrib-s7-rust/actions/workflows/security.yml)
 [![CodeQL](https://github.com/oriolrius/node-red-contrib-s7-rust/actions/workflows/codeql.yml/badge.svg)](https://github.com/oriolrius/node-red-contrib-s7-rust/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/oriolrius/node-red-contrib-s7-rust/badge)](https://scorecard.dev/viewer/?uri=github.com/oriolrius/node-red-contrib-s7-rust)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16456/badge)](https://www.bestpractices.dev/projects/16456)
+[![Fuzz](https://github.com/oriolrius/node-red-contrib-s7-rust/actions/workflows/fuzz.yml/badge.svg)](https://github.com/oriolrius/node-red-contrib-s7-rust/actions/workflows/fuzz.yml)
 [![License](https://img.shields.io/badge/license-LGPL--3.0-blue.svg)](LICENSE)
 
 Siemens S7 nodes for [Node-RED](https://nodered.org). The two S7 protocols are written in Rust and
