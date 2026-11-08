@@ -50,6 +50,8 @@ jobs:
           node-version: '22'
       - name: Tag matches package.json
         run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Release notes exist (summary + CHANGELOG section)
+        run: sh scripts/release-notes.sh "${GITHUB_REF_NAME#v}" /dev/null
       - run: pip install --require-hashes --no-deps -r .github/requirements/zigbuild.txt
       - run: npm run build:release
       - name: Smoke test in glibc and musl containers
@@ -96,6 +98,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          v="${GITHUB_REF_NAME#v}"
-          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {on=1; next} on && /^## \[/ {exit} on' CHANGELOG.md > notes.md
+          sh scripts/release-notes.sh "${GITHUB_REF_NAME#v}" notes.md
           gh release create "$GITHUB_REF_NAME" ./*.tgz --title "$GITHUB_REF_NAME" --notes-file notes.md

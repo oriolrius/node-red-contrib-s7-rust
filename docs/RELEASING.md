@@ -37,11 +37,18 @@ updates for the pinned GitHub Actions (the workflows pin each action to a commit
 `.github/requirements/zigbuild.txt` (cargo-zigbuild, pinned by hash: regenerate it with
 `uv pip compile --generate-hashes --python-version 3.12 .github/requirements/zigbuild.in -o .github/requirements/zigbuild.txt`).
 
-Rulesets: `main` and the `v*` tags cannot be deleted or force-pushed; release tags cannot move.
+Rulesets: `main` takes changes only through pull requests (squash merge, review threads
+resolved) whose required checks are green and up to date (CI, CodeQL, secrets, audit,
+dependency review); `main` and the `v*` tags cannot be deleted or force-pushed; release tags
+cannot move.
 
 ## Each release
 
 1. Update `CHANGELOG.md`: move `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, fix the links.
+   Write the release summary `.github/release-notes/vX.Y.Z.md` (see AGENTS.md). The GitHub
+   release shows the summary first, then the CHANGELOG section and the compare link. Preview:
+   `sh scripts/release-notes.sh X.Y.Z`. The `Release` workflow stops before it publishes when
+   the summary or the CHANGELOG section is missing.
 2. Set the same version in `package.json` and in `[workspace.package]` of `Cargo.toml`, then
    `cargo update -w` (updates `Cargo.lock`).
 3. Check locally:
@@ -50,9 +57,11 @@ Rulesets: `main` and the `v*` tags cannot be deleted or force-pushed; release ta
    npm run build:release && npm pack --dry-run   # prepack checks both binaries and the versions
    npm run validate                               # scorecard (node-red-dev)
    ```
-4. Commit (`chore: release X.Y.Z`), tag and push:
+4. `main` takes changes only through pull requests with green CI (squash merge). Open a PR
+   `chore(release): X.Y.Z`, merge it, then tag the merge commit and push the tag:
    ```sh
-   git tag vX.Y.Z && git push origin main vX.Y.Z
+   git switch main && git pull --ff-only
+   git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z
    ```
    The `Release` workflow tests, builds the binaries, smoke-tests them in glibc and musl
    containers, publishes to npm with provenance and creates the GitHub release.
