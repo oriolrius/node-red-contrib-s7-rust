@@ -6,12 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-11-08
+
 ### Fixed
 
 - Tag addresses out of the S7 address range are now an error. Before, a byte offset past
   2097151 (`DB1.DBB2097152`) wrapped in the 24-bit address field and reached another address
   (`DB1.DBB0`), a timer/counter number past 65535 lost its high bits, and a count past
-  32767 (`T5[70000]`) was cut (and a very large one made the decoder panic). All three
+  32767 (`T5[70000]`) was cut (and a very large one made the connection thread panic). All three
   address syntaxes check the range.
 
 ### Added
@@ -23,6 +25,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- GitHub releases start with a summary for users (`.github/release-notes/`), then the
+  CHANGELOG section.
 - CI: cargo-zigbuild installed from a hash-pinned requirements file; Node-RED 4 tests use the
   locked alias `node-red-4` (no unpinned `npm install`); `node-red-dev` pinned; SECURITY.md
   links the private reporting form.
@@ -78,7 +82,8 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.0...v1.0.1
