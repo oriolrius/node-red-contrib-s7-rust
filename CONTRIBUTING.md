@@ -27,6 +27,16 @@ cargo +nightly fuzz run s7_reply -- -max_total_time=60
 Try your build in a local Node-RED: `npm run build`, then in `~/.node-red`:
 `npm install /path/to/node-red-contrib-s7-rust` and restart Node-RED.
 
+## Pull requests
+
+1. Fork the repository and create a branch from `main`.
+2. Make the change with its tests, run `npm test` and `npm run lint`, and add a line under
+   `[Unreleased]` in `CHANGELOG.md`.
+3. Open a pull request against `main` and fill in the checklist of the template.
+4. `main` takes changes only through pull requests. The required checks (CI, CodeQL, secret
+   scanning, dependency audit and review) must pass and the branch must be up to date with
+   `main`. Pull requests are squash-merged.
+
 ## Rules
 
 - Tests run against the in-process fake PLCs (cargo features `fakecpu` and `fake`). Add a test
