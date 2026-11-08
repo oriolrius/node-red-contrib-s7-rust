@@ -37,8 +37,8 @@ updates for the pinned GitHub Actions (the workflows pin each action to a commit
 `.github/requirements/zigbuild.txt` (cargo-zigbuild, pinned by hash: regenerate it with
 `uv pip compile --generate-hashes --python-version 3.12 .github/requirements/zigbuild.in -o .github/requirements/zigbuild.txt`).
 
-Rulesets: `main` takes changes only through pull requests (squash merge, review threads
-resolved) whose required checks are green and up to date (CI, CodeQL, secrets, audit,
+Rulesets: `main` takes changes only through pull requests (squash merge, one approval of a
+code owner other than the author after the last push, review threads resolved) whose required checks are green and up to date (CI, CodeQL, secrets, audit,
 dependency review); `main` and the `v*` tags cannot be deleted or force-pushed; release tags
 cannot move.
 
