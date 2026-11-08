@@ -22,4 +22,8 @@ Instructions for coding agents in this repository.
     happens now), with the risk for fixes (for example "a write could reach another address");
   - `## Upgrade notes`: actions or behaviour changes (new errors, removed options), or "None";
   - no internal detail that only matters to maintainers (that stays in the CHANGELOG).
-- `main` takes changes only through pull requests with green required checks (squash merge).
+- `main` takes changes only through pull requests with green required checks (squash merge)
+  and one approval of a code owner who is not the author, after the last push.
+- Development and bug fixes: Claude Opus 5.5 (as `oriolrius`). Review: the account `i40sys`
+  with the Astra model. The authoring agent never approves a pull request, not with `i40sys`
+  and not with any other account.

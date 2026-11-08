@@ -39,8 +39,9 @@ Try your build in a local Node-RED: `npm run build`, then in `~/.node-red`:
 5. Each pull request needs one approval from a code owner who is not its author
    (`.github/CODEOWNERS`), given after the last push.
 
-Code review: the account `i40sys` reviews pull requests with an AI model that is different
-from the tools used to write the change. Its reviews say so. Maintainers still own every merge.
+AI models: development and bug fixes are made with Claude Opus 5.5; the account `i40sys`
+reviews pull requests with the Astra model (a different model from the one that wrote the
+change). Each review says which model made it. Maintainers still own every merge.
 
 ## Rules
 
