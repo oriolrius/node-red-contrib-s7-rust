@@ -14,13 +14,23 @@ npm test        # Rust unit tests + Node-RED tests against fake PLCs
 npm run lint    # rustfmt + clippy (warnings are errors)
 ```
 
+Node-RED 4 runs from the locked alias `node-red-4`: `S7RS_NODE_RED=node-red-4 npm run test:node`.
+
+Fuzzing (nightly toolchain and `cargo install cargo-fuzz --locked`):
+
+```sh
+cd fuzz
+cargo +nightly fuzz list
+cargo +nightly fuzz run s7_reply -- -max_total_time=60
+```
+
 Try your build in a local Node-RED: `npm run build`, then in `~/.node-red`:
 `npm install /path/to/node-red-contrib-s7-rust` and restart Node-RED.
 
 ## Rules
 
 - Tests run against the in-process fake PLCs (cargo features `fakecpu` and `fake`). Add a test
-  for each fix or feature.
+  for each fix or feature. Code that parses bytes from the PLC gets a fuzz target in `fuzz/`.
 - Never run tests that write against a production PLC. Use a simulator.
 - The addon must not expose CPU STOP/START or block upload.
 - Keep the editor help (`nodes/locales/en-US/*.html`) and the README in step with the code.

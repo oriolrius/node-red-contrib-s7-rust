@@ -70,6 +70,7 @@
   },
   "devDependencies": {
     "node-red": "^5.0.0",
+    "node-red-4": "npm:node-red@^4.1.17",
     "node-red-node-test-helper": "^0.3.6"
   },
   "publishConfig": {

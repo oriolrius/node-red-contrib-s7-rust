@@ -191,6 +191,26 @@ fn rewrite_v(a: &str) -> Option<String> {
     Some(out)
 }
 
+/// Last byte offset of the 24-bit S7 address field (it holds byte * 8 + bit).
+pub const MAX_BYTE_OFFSET: i64 = 0x1F_FFFF;
+
+/// Rejects a byte range that the 24-bit address field cannot hold: without
+/// this check the address wraps and the request reaches another address.
+pub(crate) fn check_bytes(s: &str, off: i64, total: usize) -> Result<()> {
+    if off < 0 || off.saturating_add(total.max(1) as i64) > MAX_BYTE_OFFSET + 1 {
+        return Err(local(format!("{s}: address out of range (byte offset 0-{MAX_BYTE_OFFSET})")));
+    }
+    Ok(())
+}
+
+/// Timer/counter numbers are 16-bit, and the reply holds 2 bytes per element.
+pub(crate) fn check_tc(s: &str, num: i64, n: usize) -> Result<()> {
+    if num < 0 || n == 0 || n > 0x7FFF || num.saturating_add(n as i64) > 0x1_0000 {
+        return Err(local(format!("{s}: timer/counter out of range (number 0-65535, at most 32767 elements)")));
+    }
+    Ok(())
+}
+
 /// Parses one address. It accepts the Siemens notation (with optional `[n]`
 /// and `:type`) and the nodes7 / node-red-contrib-s7 notation ("DB1,REAL0",
 /// "MI14", "MRW20"…): text with a comma goes to `parse_node_s7`, and text the
@@ -278,11 +298,13 @@ pub fn parse_siemens(s: &str) -> Result<Tag> {
 
     match tc {
         Some('T') => {
+            check_tc(s, off, tag.elems)?;
             tag.typ = Type::S5Time;
             tag.item = Item::timers(off as u32, tag.elems as u16);
             return Ok(tag);
         }
         Some(_) => {
+            check_tc(s, off, tag.elems)?;
             tag.typ = Type::Counter;
             tag.item = Item::counters(off as u32, tag.elems as u16);
             return Ok(tag);
@@ -297,6 +319,10 @@ pub fn parse_siemens(s: &str) -> Result<Tag> {
         if tag.elems != 1 {
             return Err(local(format!("{s}: bit arrays are not supported")));
         }
+        if bit > 7 {
+            return Err(local(format!("{s}: bit offset out of range 0-7")));
+        }
+        check_bytes(s, off, 1)?;
         tag.typ = Type::Bool;
         tag.item = Item::bit(area, db, off as u32, bit as u8);
         return Ok(tag);
@@ -318,6 +344,7 @@ pub fn parse_siemens(s: &str) -> Result<Tag> {
     if total > 0xffff {
         return Err(local(format!("{s}: too large")));
     }
+    check_bytes(s, off, total)?;
     tag.item = Item::bytes(area, db, off as u32, total as u16);
     Ok(tag)
 }

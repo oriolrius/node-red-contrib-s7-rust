@@ -1,0 +1,63 @@
+# Fuzz targets (cargo-fuzz, nightly). Not part of the main workspace.
+#   cargo +nightly fuzz run <target> -- -max_total_time=60
+[package]
+name = "s7-fuzz"
+version = "0.0.0"
+edition = "2021"
+license = "LGPL-3.0-only"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+s7 = { path = "../crates/s7", features = ["fuzzing"] }
+s7plus = { path = "../crates/s7plus" }
+
+[workspace]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "s7_reply"
+path = "fuzz_targets/s7_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "s7_tag_value"
+path = "fuzz_targets/s7_tag_value.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "s7_block_clock"
+path = "fuzz_targets/s7_block_clock.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "s7plus_pdu"
+path = "fuzz_targets/s7plus_pdu.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "s7plus_value"
+path = "fuzz_targets/s7plus_value.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "s7plus_misc"
+path = "fuzz_targets/s7plus_misc.rs"
+test = false
+doc = false
+bench = false

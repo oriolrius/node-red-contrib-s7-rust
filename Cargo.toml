@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/s7", "crates/s7plus", "crates/s7napi"]
+exclude = ["fuzz"]
 
 [workspace.package]
 version = "1.0.3"

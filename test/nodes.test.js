@@ -13,7 +13,9 @@ process.env.S7RS_NAPI = process.env.S7RS_NAPI || path.join(__dirname, '.bin', 's
 const helper = require('node-red-node-test-helper');
 const { loadAddon, stopAll } = require('../lib/napi-bridge');
 
-helper.init(require.resolve('node-red'));
+// S7RS_NODE_RED=node-red-4 runs the tests on Node-RED 4 (locked alias in devDependencies).
+const RED_MODULE = process.env.S7RS_NODE_RED || 'node-red';
+helper.init(require.resolve(RED_MODULE));
 const fakes = loadAddon();
 
 const NODES = ['endpoint', 'read', 'write', 'watch', 'info'].map((n) => require(`../nodes/s7rs-${n}.js`));
