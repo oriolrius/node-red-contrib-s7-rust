@@ -36,6 +36,11 @@ Try your build in a local Node-RED: `npm run build`, then in `~/.node-red`:
 4. `main` takes changes only through pull requests. The required checks (CI, CodeQL, secret
    scanning, dependency audit and review) must pass and the branch must be up to date with
    `main`. Pull requests are squash-merged.
+5. Each pull request needs one approval from a code owner who is not its author
+   (`.github/CODEOWNERS`), given after the last push.
+
+Code review: the account `i40sys` reviews pull requests with an AI model that is different
+from the tools used to write the change. Its reviews say so. Maintainers still own every merge.
 
 ## Rules
 
