@@ -22,6 +22,16 @@ package ships prebuilt binaries for **Linux x64** (glibc and musl/Alpine).
 
 This is the next generation of
 [@oriolrius/node-red-contrib-s7](https://www.npmjs.com/package/@oriolrius/node-red-contrib-s7).
+
+> [!TIP]
+> **Reviewers and contributors wanted.** The goal is an S7 connector that covers the S7comm and
+> S7CommPlus functions as close to 100% as possible, with every change reviewed by someone other
+> than its author. A single maintainer cannot approve their own pull requests, so the OpenSSF
+> Scorecard [Code-Review](https://github.com/ossf/scorecard/blob/main/docs/checks.md#code-review)
+> score stays low. If you know Siemens S7, Rust or Node-RED, please
+> [review an open pull request](https://github.com/oriolrius/node-red-contrib-s7-rust/pulls) or
+> take a ❌ item of the [protocol coverage](#protocol-coverage) map. See
+> [CONTRIBUTING.md](CONTRIBUTING.md).
 See [Migration](#migration-from-oriolriusnode-red-contrib-s7).
 
 ## Contents
