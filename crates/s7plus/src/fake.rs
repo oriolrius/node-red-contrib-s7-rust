@@ -40,6 +40,8 @@ use crate::{DateTime, Message};
 
 /// Item error returned for bad addresses.
 pub const ERR_ADDR: u64 = 0x8020_ab00_1bc8_fff4;
+/// Explore refused by PLCSIM (FW S4.1) when a TLS request lacks the last 0 byte.
+pub const ERR_EXPLORE_TRAILER: u64 = 0xa201_be00_017e_ff79;
 
 /// Type-info RIDs of the fake's data blocks.
 pub const TI_DB1: u32 = 0x9100_0001;
@@ -498,6 +500,20 @@ impl Fake {
         for _ in 0..n.min(10_000) {
             q.attrs.push(r.vlq32());
         }
+        let tls = lock(&self.link).is_tls();
+        if tls {
+            // Like PLCSIM (FW S4.1): with an integrity id the request ends with
+            // the id, a 4-byte fill and one more 0 byte; without that byte the
+            // PLC refuses the Explore.
+            r.vlq32();
+            r.u32();
+            if r.left() < 1 || r.byte() != 0 {
+                let mut w = Writer::new();
+                w.vlq64(ERR_EXPLORE_TRAILER);
+                w.u32(0);
+                return self.reply(ver, m, &w.b);
+            }
+        }
         let objs = {
             let mut st = self.st();
             let md = &mut st.model;
@@ -538,6 +554,9 @@ impl Fake {
             Some(objs) => {
                 w.vlq64(0);
                 w.u32(q.object);
+                if tls {
+                    w.vlq32(0); // integrity id of the response
+                }
                 for o in &objs {
                     o.encode(&mut w);
                 }

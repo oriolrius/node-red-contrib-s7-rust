@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- S7CommPlus over TLS: symbol resolution, `dbs` and `browse` failed on S7-1500 FW V4.x
+  (tested on PLCSIM Advanced, FW S4.1) with `Explore returned 0xa201be00017eff79`. With an
+  integrity id, the Explore request now ends with one more 0 byte after the fill, like
+  S7CommPlusDriver. Symbolic reads such as `"DB".member` work over TLS now. The fake PLC
+  refuses the old request in TLS sessions, and the TLS test explores the DB list.
+
 ## [1.0.4] - 2026-11-08
 
 ### Fixed

@@ -388,6 +388,9 @@ fn tls_and_new_legitimation_fake() {
     assert_eq!(errs[0], 0, "write");
     let (vals, errs) = c.read(&[a]).unwrap();
     assert!(errs[0] == 0 && vals[0].v.as_bytes() == Some(&big[..]), "read back over TLS: {errs:?}");
+    // Explore over TLS (integrity id): PLCSIM FW S4.1 needs the trailing 0 byte
+    let dbs = c.list_datablocks(false).unwrap_or_else(|e| panic!("Explore over TLS: {e}"));
+    assert!(!dbs.is_empty(), "no DBs over TLS");
     // TLS asked to a PLC without TLS
     let f2 = FakePlc::start().unwrap();
     let r = Client::connect(Options {
