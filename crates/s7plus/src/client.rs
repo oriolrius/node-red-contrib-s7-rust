@@ -915,6 +915,11 @@ impl Conn {
         q.encode(&mut w);
         self.integrity_id(&mut w, false);
         w.u32(0);
+        if self.integrity {
+            // With an integrity id, PLCSIM (and FW >= V4) needs one more 0 byte
+            // after the fill; with only 4 bytes it refuses the request.
+            w.byte(0);
+        }
         w.b
     }
 
