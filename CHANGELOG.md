@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `s7 alarms` node (S7CommPlus): one message per PLC alarm event (`msg.state` coming / going,
+  `msg.topic` the alarm id, `msg.payload` times, associated values, priority, class, texts). At
+  start, and again after a reconnect, it sends the active alarms (`msg.initial`). The status shows
+  the number of active alarms. Example flow "05 - S7CommPlus alarms". Tested on PLCSIM Advanced
+  V8 (FW S4.1): a Program_Alarm comes about 20 ms after its signal is written.
+- Alarm subscriptions: `AlarmSubOptions::for_plc` selects the layout. S7-1500 FW V4.x accepts the
+  TIA Portal layout but sends no alarms with it; it needs the S7CommPlusDriver layout (the S7-1200
+  keeps the TIA Portal layout). The `s7 info` action `alarms` also returns `state`, `priority`,
+  `alarmClass` and the associated values. The fake PLC sends alarm notifications
+  (`FakePlc::raise_alarm`, `FakeModel::alarm_needs_reference`); golden tests decode PLCSIM alarm
+  notifications.
+
 - `s7 watch`: mode "PLC subscription" (S7CommPlus). The node subscribes to the tags with the
   interval as cycle time, and the PLC sends only the values that changed (no read request per
   cycle). `msg.ts` is the PLC time of the notification when the PLC sends one. After a reconnect

@@ -1,0 +1,114 @@
+[
+  {
+    "id": "c5",
+    "type": "comment",
+    "name": "PLC alarms with s7 alarms (S7CommPlus)",
+    "info": "The node subscribes to the alarms of the CPU (Program_Alarm, ProDiag...).\nAt start it sends the active alarms (msg.initial = true), then one message per coming / going.\nmsg.topic is the alarm id, msg.state is coming or going, msg.payload has the times, the associated values and the texts.\nThe switch sends the coming alarms to the first output and the going alarms to the second one.",
+    "x": 230,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "al5",
+    "type": "s7rs-alarms",
+    "name": "",
+    "endpoint": "ep5",
+    "initial": true,
+    "layout": "auto",
+    "x": 140,
+    "y": 100,
+    "wires": [
+      [
+        "sw5"
+      ]
+    ]
+  },
+  {
+    "id": "sw5",
+    "type": "switch",
+    "name": "state",
+    "property": "state",
+    "propertyType": "msg",
+    "rules": [
+      {
+        "t": "eq",
+        "v": "coming",
+        "vt": "str"
+      },
+      {
+        "t": "eq",
+        "v": "going",
+        "vt": "str"
+      }
+    ],
+    "checkall": "true",
+    "repair": false,
+    "outputs": 2,
+    "x": 310,
+    "y": 100,
+    "wires": [
+      [
+        "d5a"
+      ],
+      [
+        "d5b"
+      ]
+    ]
+  },
+  {
+    "id": "d5a",
+    "type": "debug",
+    "name": "coming",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 480,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "d5b",
+    "type": "debug",
+    "name": "going",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 480,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "ep5",
+    "type": "s7rs-endpoint",
+    "name": "PLC (S7CommPlus, TLS)",
+    "protocol": "s7plus",
+    "host": "192.168.0.1",
+    "port": 102,
+    "cpu": "1500",
+    "rack": "",
+    "slot": "",
+    "link": "",
+    "localTsap": "",
+    "remoteTsap": "",
+    "pdu": "",
+    "timeout": 5000,
+    "attempts": 3,
+    "reconnect": 5000,
+    "gap": 5,
+    "byteOrder": "big",
+    "logLevel": "warn",
+    "tsap": "SIMATIC-ROOT-HMI",
+    "tls": true,
+    "username": ""
+  }
+]

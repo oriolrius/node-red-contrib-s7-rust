@@ -1,0 +1,46 @@
+<script type="text/javascript">
+  RED.nodes.registerType('s7rs-alarms', {
+    category: 'network',
+    color: '#3FADB5',
+    defaults: {
+      name: { value: '' },
+      endpoint: { value: '', type: 's7rs-endpoint', required: true },
+      initial: { value: true },
+      layout: { value: 'auto' },
+    },
+    inputs: 0,
+    outputs: 1,
+    icon: 'font-awesome/fa-bell',
+    paletteLabel: 's7 alarms',
+    label: function () {
+      return this.name || 's7 alarms';
+    },
+    outputLabels: function () {
+      return this._('s7rs-alarms.portLabel.out');
+    },
+  });
+</script>
+
+<script type="text/html" data-template-name="s7rs-alarms">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> <span data-i18n="s7rs-alarms.label.name"></span></label>
+    <input type="text" id="node-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-endpoint"><i class="fa fa-plug"></i> <span data-i18n="s7rs-alarms.label.endpoint"></span></label>
+    <input type="text" id="node-input-endpoint" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-initial">&nbsp;</label>
+    <input type="checkbox" id="node-input-initial" style="width: auto; display: inline-block" />
+    <span data-i18n="s7rs-alarms.label.initial"></span>
+  </div>
+  <div class="form-row">
+    <label for="node-input-layout" data-i18n="s7rs-alarms.label.layout"></label>
+    <select id="node-input-layout">
+      <option value="auto" data-i18n="s7rs-alarms.layout.auto"></option>
+      <option value="tia" data-i18n="s7rs-alarms.layout.tia"></option>
+      <option value="reference" data-i18n="s7rs-alarms.layout.reference"></option>
+    </select>
+  </div>
+</script>

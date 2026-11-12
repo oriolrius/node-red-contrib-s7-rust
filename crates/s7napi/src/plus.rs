@@ -17,7 +17,7 @@ use serde_json::{json, Value as J};
 use s7::{Stats, Val};
 use s7plus::{AreaItem, Client, Error as PErr, ItemAddress, Options, PlcValue, SubOptions, Subscription, TlsOptions, Value as PValue};
 
-use crate::device::{emit_log, Device, Out, Push};
+use crate::device::{emit_log, AlarmPush, Device, Out, Push};
 use crate::{LogFn, OpenParams, OpenResult, StatusFn};
 
 #[derive(Clone)]
@@ -52,6 +52,8 @@ pub struct PlusDev {
     stats: Stats,
     /// PLC subscriptions of the `s7 watch` nodes in push mode, by node id.
     push: Mutex<HashMap<String, PushSub>>,
+    /// PLC alarm subscriptions of the `s7 alarms` nodes, by key.
+    alarm_subs: Mutex<HashMap<String, (Arc<Client>, Subscription)>>,
 }
 
 /// A PLC subscription. It belongs to one session: after a reconnect it is
@@ -161,6 +163,7 @@ impl PlusDev {
             reconnects: AtomicU64::new(0),
             stats: Stats::new(),
             push: Mutex::new(HashMap::new()),
+            alarm_subs: Mutex::new(HashMap::new()),
         };
         Ok((Arc::new(dev), OpenResult { protocol: "s7plus".into(), addr, rack: None, slot: None, link: None }))
     }
@@ -303,6 +306,31 @@ impl PlusDev {
         self.tags.lock().unwrap().insert(name.to_string(), t.clone());
         Ok(t)
     }
+}
+
+/// An alarm (DAI) as JSON for the `alarms` action and the `s7 alarms` node.
+/// `state`: "coming" while the alarm is active (all-states bit 0), else
+/// "going". The associated values are the raw PLC bytes, empty ones left out
+/// at the end.
+pub fn alarm_json(x: &s7plus::Alarm) -> J {
+    let cgs = |c: &Option<s7plus::AlarmCgs>| {
+        c.as_ref().map(|c| {
+            let mut vals: Vec<&Vec<u8>> = c.assoc_values.iter().collect();
+            while vals.last().is_some_and(|v| v.is_empty()) {
+                vals.pop();
+            }
+            json!({"state": c.all_states, "time": c.timestamp.map(|t| t.rfc3339_nano()), "ackTime": c.ack_time.map(|t| t.rfc3339_nano()), "values": vals})
+        })
+    };
+    let mut texts: Vec<(u32, String)> = x.texts.iter().map(|(k, v)| (*k, v.clone())).collect();
+    texts.sort();
+    json!({
+        "name": x.name, "id": format!("0x{:016x}", x.cpu_alarm_id), "allStates": x.all_states,
+        "state": if x.all_states & 1 != 0 { "coming" } else { "going" },
+        "messageType": x.message_type, "seq": x.seq_counter, "coming": cgs(&x.coming), "going": cgs(&x.going),
+        "priority": x.hmi.map(|h| h.priority), "alarmClass": x.hmi.map(|h| h.alarm_class),
+        "texts": texts.iter().map(|(k, v)| json!({"lang": k >> 16, "id": k & 0xffff, "text": v})).collect::<Vec<_>>(),
+    })
 }
 
 /// The address of a resolved tag.
@@ -539,25 +567,89 @@ impl Device for PlusDev {
             "alarms" => {
                 let all = a.get("all").and_then(|v| v.as_bool()).unwrap_or(false);
                 let l = self.run(|c| c.active_alarms(all)).map_err(e)?;
-                J::Array(
-                    l.iter()
-                        .map(|x| {
-                            let cgs = |c: &Option<s7plus::AlarmCgs>| {
-                                c.as_ref().map(|c| json!({"state": c.all_states, "time": c.timestamp.map(|t| t.rfc3339_nano()), "ackTime": c.ack_time.map(|t| t.rfc3339_nano())}))
-                            };
-                            let mut texts: Vec<(u32, String)> = x.texts.iter().map(|(k, v)| (*k, v.clone())).collect();
-                            texts.sort();
-                            json!({
-                                "name": x.name, "id": format!("0x{:016x}", x.cpu_alarm_id), "allStates": x.all_states,
-                                "messageType": x.message_type, "seq": x.seq_counter, "coming": cgs(&x.coming), "going": cgs(&x.going),
-                                "texts": texts.iter().map(|(k, v)| json!({"lang": k >> 16, "id": k & 0xffff, "text": v})).collect::<Vec<_>>(),
-                            })
-                        })
-                        .collect(),
-                )
+                J::Array(l.iter().map(alarm_json).collect())
             }
             x => return Err(format!("unknown action {x:?} for s7plus (status, info, cpuState, limits, dbs, browse, alarms)")),
         })
+    }
+
+    fn alarm_poll(&self, key: &str, cfg: &J, wait: Duration) -> Result<AlarmPush, String> {
+        let Some(c) = self.client.lock().unwrap().clone() else { return Ok(AlarmPush::Down) };
+        let mut map = self.alarm_subs.lock().unwrap();
+        let mut out = Vec::new();
+        if !map.get(key).is_some_and(|(cl, _)| Arc::ptr_eq(cl, &c)) {
+            map.remove(key); // gone with its session
+            let ao = match cfg.get("layout").and_then(|v| v.as_str()).unwrap_or("auto") {
+                "tia" => s7plus::AlarmSubOptions { reference: false, ..s7plus::AlarmSubOptions::for_plc("") },
+                "reference" => s7plus::AlarmSubOptions { reference: true, ..s7plus::AlarmSubOptions::for_plc("") },
+                _ => s7plus::AlarmSubOptions::for_plc(&c.info().paom()),
+            };
+            let initial = cfg.get("initial").and_then(|v| v.as_bool()).unwrap_or(true);
+            let r = (|| -> Result<Subscription, PErr> {
+                // subscribe first, then list: an alarm that comes in between is not lost
+                let sub = c.subscribe_alarms(&ao)?;
+                if initial {
+                    match c.active_alarms(false) {
+                        Ok(l) => out.extend(l.iter().map(|a| {
+                            let mut j = alarm_json(a);
+                            j["initial"] = J::Bool(true);
+                            j
+                        })),
+                        Err(e) => {
+                            let _ = sub.close(&c);
+                            return Err(e);
+                        }
+                    }
+                }
+                Ok(sub)
+            })();
+            match r {
+                Ok(sub) => {
+                    emit_log(
+                        &self.log,
+                        &self.id,
+                        "debug",
+                        format!("alarm subscription ({} layout)", if ao.reference { "S7CommPlusDriver" } else { "TIA Portal" }),
+                    );
+                    map.insert(key.to_string(), (c.clone(), sub));
+                }
+                Err(e) if transport(&e) => {
+                    drop(map);
+                    self.drop_client(&e);
+                    return Ok(AlarmPush::Down);
+                }
+                Err(e) => {
+                    emit_log(&self.log, &self.id, "warn", format!("alarm subscription refused: {e}"));
+                    return Err(e.to_string());
+                }
+            }
+            if !out.is_empty() {
+                return Ok(AlarmPush::Alarms(out)); // the active alarms first
+            }
+        }
+        let (_, sub) = map.get_mut(key).expect("alarm subscription");
+        match sub.next(&c, wait) {
+            Ok(n) => out.extend(n.alarm_objects.iter().map(|o| alarm_json(&s7plus::decode_alarm(o)))),
+            Err(e) if e.is_timeout() => {}
+            Err(e) if transport(&e) => {
+                map.remove(key);
+                drop(map);
+                self.drop_client(&e);
+                return Ok(AlarmPush::Down);
+            }
+            Err(e) => emit_log(&self.log, &self.id, "warn", format!("alarm notification: {e}")),
+        }
+        Ok(if out.is_empty() { AlarmPush::Idle } else { AlarmPush::Alarms(out) })
+    }
+
+    fn alarm_close(&self, key: &str) {
+        let s = self.alarm_subs.lock().unwrap().remove(key);
+        if let Some((cl, sub)) = s {
+            let cur = self.client.lock().unwrap().clone();
+            if cur.is_some_and(|c| Arc::ptr_eq(&c, &cl)) {
+                let _ = sub.close(&cl);
+            }
+        }
     }
 
     fn push_poll(&self, sub: &str, tags: &[String], cycle_ms: u32, wait: Duration) -> Result<Push, String> {

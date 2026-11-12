@@ -55,7 +55,8 @@
       "s7rs-read": "nodes/s7rs-read.js",
       "s7rs-write": "nodes/s7rs-write.js",
       "s7rs-watch": "nodes/s7rs-watch.js",
-      "s7rs-info": "nodes/s7rs-info.js"
+      "s7rs-info": "nodes/s7rs-info.js",
+      "s7rs-alarms": "nodes/s7rs-alarms.js"
     }
   },
   "scripts": {

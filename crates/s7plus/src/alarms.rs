@@ -182,6 +182,18 @@ pub struct AlarmSubOptions {
     pub with_texts: bool,
 }
 
+impl AlarmSubOptions {
+    /// The layout for a PLC, from its PAOM string (`SessionInfo::paom`):
+    /// the TIA Portal layout for the S7-1200 ("6ES7 21…", captured with TIA
+    /// Portal V21 and FW V3), else the S7CommPlusDriver layout. The S7-1500
+    /// FW V4.x (PLCSIM Advanced V8, FW S4.1) accepts the TIA layout but sends
+    /// no alarm notifications with it.
+    pub fn for_plc(paom: &str) -> AlarmSubOptions {
+        let s7_1200 = paom.split(';').nth(1).is_some_and(|m| m.trim_start().starts_with("6ES7 21"));
+        AlarmSubOptions { reference: !s7_1200, languages: vec![1033], with_texts: true }
+    }
+}
+
 pub(crate) fn alarm_subscription_object(o: &SubOptions, ao: &AlarmSubOptions, rid: u32, ref_rid: u32) -> Object {
     let refs = Value { flags: FLAG_ADDRESS_ARRAY, typ: T_UDINT, v: V::Array(vec![V::U32(0x8001_0000), V::U32(0), V::U32(0)]) };
     let mut s = subscription_object(o, rid, 2, refs);

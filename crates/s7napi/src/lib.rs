@@ -52,6 +52,8 @@ pub struct DataEv {
     vals: Vec<(usize, Out)>,
     ts: String,
     ms: f64,
+    /// Alarm events (JSON array text) of an alarm subscription; no values then.
+    alarms: Option<String>,
 }
 
 #[napi(object)]
@@ -111,6 +113,16 @@ pub struct SubParams {
 }
 
 #[napi(object)]
+pub struct AlarmParams {
+    pub conn: String,
+    pub sub: String,
+    /// Send the active alarms first (default true; again after a reconnect).
+    pub initial: Option<bool>,
+    /// "auto" (default), "tia" or "reference": the subscription layout.
+    pub layout: Option<String>,
+}
+
+#[napi(object)]
 pub struct TagError {
     pub tag: String,
     pub error: String,
@@ -163,6 +175,9 @@ impl ToNapiValue for DataEv {
         }
         o.set_named_property("ts", ev.ts)?;
         o.set_named_property("ms", ev.ms)?;
+        if let Some(a) = ev.alarms {
+            o.set_named_property("alarms", a)?;
+        }
         Ok(o.raw())
     }
 }
@@ -381,6 +396,28 @@ impl S7Native {
         Ok(promise)
     }
 
+    /// subscribeAlarms({conn, sub, initial, layout}): S7CommPlus alarm events
+    /// as data events with `alarms` (JSON array text). Stop with unsubscribe(sub).
+    #[napi]
+    pub fn subscribe_alarms(&self, p: AlarmParams) -> napi::Result<()> {
+        if p.sub.is_empty() {
+            return Err(napi_err("subscribeAlarms: sub is required"));
+        }
+        let tx = self.sender(&p.conn)?;
+        self.unsubscribe(p.sub.clone());
+        let stop = Arc::new(AtomicBool::new(false));
+        let generation = SUB_GEN.fetch_add(1, Ordering::Relaxed);
+        let cfg = serde_json::json!({"initial": p.initial.unwrap_or(true), "layout": p.layout.clone().unwrap_or_else(|| "auto".into())});
+        let (data, s2, sub, conn) = (self.on_data.clone(), stop.clone(), p.sub.clone(), p.conn.clone());
+        let key = format!("{}#{generation}", p.sub);
+        std::thread::Builder::new()
+            .name(format!("s7alarm-{}", p.sub))
+            .spawn(move || alarm_loop(sub, conn, key, cfg, tx, s2, data))
+            .map_err(napi_err)?;
+        self.subs.lock().unwrap().insert(p.sub, SubHandle { conn: p.conn, stop });
+        Ok(())
+    }
+
     #[napi]
     pub fn unsubscribe(&self, sub: String) {
         // Never join here: the subscription thread may wait for this (JS) thread.
@@ -584,6 +621,7 @@ fn push_loop(c: &SubCfg, tx: &Sender<Msg>, stop: &AtomicBool, data: &DataFn) -> 
                     vals,
                     ts: ts.unwrap_or_else(device::rfc3339_now),
                     ms: start.elapsed().as_secs_f64() * 1000.0,
+                    alarms: None,
                 };
                 if data.call(ev, ThreadsafeFunctionCallMode::Blocking) != napi::Status::Ok {
                     break;
@@ -603,6 +641,50 @@ fn push_loop(c: &SubCfg, tx: &Sender<Msg>, stop: &AtomicBool, data: &DataFn) -> 
     let key = c.key.clone();
     let _ = tx.send(Msg::Job(Box::new(move |dev| dev.push_close(&key))));
     true
+}
+
+/// Polls a PLC alarm subscription on the connection thread and sends the
+/// alarm events. When the PLC refuses the subscription it tries again every
+/// 30 s (the device logs the reason).
+fn alarm_loop(sub: String, conn: String, key: String, cfg: serde_json::Value, tx: Sender<Msg>, stop: Arc<AtomicBool>, data: DataFn) {
+    let pause = |ms: u64| {
+        let until = Instant::now() + Duration::from_millis(ms);
+        while !stop.load(Ordering::SeqCst) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    while !stop.load(Ordering::SeqCst) {
+        let start = Instant::now();
+        let (rtx, rrx) = mpsc::sync_channel(1);
+        let (k, c) = (key.clone(), cfg.clone());
+        if tx.send(Msg::Job(Box::new(move |dev| drop(rtx.send(dev.alarm_poll(&k, &c, PUSH_WAIT)))))).is_err() {
+            return;
+        }
+        let Ok(r) = rrx.recv() else { return };
+        match r {
+            Ok(device::AlarmPush::Alarms(list)) => {
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                let ev = DataEv {
+                    sub: sub.clone(),
+                    conn: conn.clone(),
+                    total: 0,
+                    vals: Vec::new(),
+                    ts: device::rfc3339_now(),
+                    ms: start.elapsed().as_secs_f64() * 1000.0,
+                    alarms: Some(serde_json::Value::Array(list).to_string()),
+                };
+                if data.call(ev, ThreadsafeFunctionCallMode::Blocking) != napi::Status::Ok {
+                    break;
+                }
+            }
+            Ok(device::AlarmPush::Idle) => {}
+            Ok(device::AlarmPush::Down) => pause(500),
+            Err(_) => pause(30_000),
+        }
+    }
+    let _ = tx.send(Msg::Job(Box::new(move |dev| dev.alarm_close(&key))));
 }
 
 fn sub_loop(c: SubCfg, tx: Sender<Msg>, stop: Arc<AtomicBool>, data: DataFn) {
@@ -651,6 +733,7 @@ fn sub_loop(c: SubCfg, tx: Sender<Msg>, stop: Arc<AtomicBool>, data: DataFn) {
                 vals: send,
                 ts: device::rfc3339_now(),
                 ms: start.elapsed().as_secs_f64() * 1000.0,
+                alarms: None,
             };
             if data.call(ev, ThreadsafeFunctionCallMode::Blocking) != napi::Status::Ok {
                 break;
@@ -709,6 +792,8 @@ mod fakes {
             let mut st = f.lock();
             st.model.use_fw4_flags();
             st.model.sub_needs_cycle = true;
+            st.model.alarm_needs_reference = true;
+            st.paom = "1;6ES7 SIM-01500-APLC;S4.1".into();
         }
         let a = f.addr();
         KEEP.lock().unwrap().push(Box::new(f));
@@ -721,6 +806,17 @@ mod fakes {
         let keep = KEEP.lock().unwrap();
         if let Some(f) = keep.iter().filter_map(|b| b.downcast_ref::<s7plus::fake::FakePlc>()).find(|f| f.addr() == addr) {
             f.drop_connections();
+        }
+    }
+
+    /// Raises (coming) or clears (going) an alarm on the fake S7CommPlus PLC at
+    /// `addr`: id as hex text, associated values as byte arrays.
+    #[napi]
+    pub fn fake_s7plus_raise_alarm(addr: String, id: String, coming: bool, values: Option<Vec<Vec<u8>>>) {
+        let id = u64::from_str_radix(id.trim_start_matches("0x"), 16).unwrap_or(0);
+        let keep = KEEP.lock().unwrap();
+        if let Some(f) = keep.iter().filter_map(|b| b.downcast_ref::<s7plus::fake::FakePlc>()).find(|f| f.addr() == addr) {
+            f.raise_alarm(id, coming, values.unwrap_or_default());
         }
     }
 

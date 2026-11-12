@@ -100,6 +100,9 @@ pub struct FakeModel {
     /// S7-1500 FW V4.x (PLCSIM S4.1): a subscription with cycle time 0 gets
     /// the first notification only, no changes.
     pub sub_needs_cycle: bool,
+    /// S7-1500 FW V4.x (PLCSIM S4.1): an alarm subscription without the
+    /// S7CommPlusDriver attributes (TIA Portal layout) gets no notifications.
+    pub alarm_needs_reference: bool,
 }
 
 struct FakeSub {
@@ -112,6 +115,8 @@ struct FakeSub {
     /// Sends changes (false: only the first notification, see
     /// [`FakeModel::sub_needs_cycle`]).
     changes: bool,
+    /// Alarm subscription: the AlarmSubscriptionRef id and the DAIs to send.
+    alarm: Option<(u32, Vec<Object>)>,
 }
 
 /// A running fake PLC on 127.0.0.1 (stopped on drop).
@@ -187,6 +192,42 @@ impl FakePlc {
     /// Number of live subscriptions.
     pub fn subscriptions(&self) -> usize {
         self.lock().model.subs.len()
+    }
+
+    /// An alarm comes (`coming`) or goes: the active alarm list changes, and
+    /// every alarm subscription gets a DAI with the new state (all states
+    /// 0x87 coming / 0x86 going, like PLCSIM) and the associated values.
+    pub fn raise_alarm(&self, cpu_alarm_id: u64, coming: bool, assoc: Vec<Vec<u8>>) {
+        let mut st = self.lock();
+        let md = &mut st.model;
+        let mut d = md.dais.first().cloned().unwrap_or_else(|| Object::new(0x1000_0006, CLASS_DAI));
+        d.set_attr(ATTR_DAI_CPU_ALARM_ID, Value::new(T_LWORD, V::U64(cpu_alarm_id)));
+        let states = if coming { 0x87 } else { 0x86 };
+        d.set_attr(ATTR_DAI_ALL_STATES_INFO, Value::usint(states));
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |t| t.as_nanos() as u64);
+        let mut cgs = Struct::new(3473);
+        cgs.set(ATTR_AS_CGS_ALL_STATES_INFO, Value::usint(states));
+        cgs.set(ATTR_AS_CGS_TIMESTAMP, Value::timestamp(now));
+        let vals = assoc.into_iter().map(V::Bytes).collect();
+        cgs.set(ATTR_AS_CGS_ASSOC_VALUES, Value { flags: FLAG_ARRAY, typ: T_BLOB, v: V::Array(vals) });
+        cgs.set(ATTR_AS_CGS_ACK_TIMESTAMP, Value::timestamp(0));
+        d.attrs.retain(|(k, _)| *k != ATTR_DAI_COMING && *k != ATTR_DAI_GOING);
+        d.set_attr(if coming { ATTR_DAI_COMING } else { ATTR_DAI_GOING }, Value::structv(cgs));
+        let known = md.dais.iter().position(|x| x.attr(ATTR_DAI_CPU_ALARM_ID).and_then(|v| v.v.as_u64()) == Some(cpu_alarm_id));
+        match (coming, known) {
+            (true, Some(i)) => md.dais[i] = d.clone(),
+            (true, None) => md.dais.push(d.clone()),
+            (false, Some(i)) => {
+                md.dais.remove(i);
+            }
+            (false, None) => {}
+        }
+        for s in md.subs.values_mut() {
+            if let Some((_, q)) = s.alarm.as_mut() {
+                q.push(d.clone());
+                let _ = s.trigger.try_send(());
+            }
+        }
     }
 
     /// Closes every client connection, like a PLC restart: the sessions and
@@ -730,7 +771,12 @@ impl Fake {
             let (tx, rx) = sync_channel(1);
             let cycle = obj.attr(ATTR_SUB_CYCLE_TIME).and_then(|v| v.v.as_u32()).unwrap_or(0);
             let changes = !(md.sub_needs_cycle && cycle == 0);
-            let mut s = FakeSub { id, refs: HashMap::new(), credit: -1, tick: 0, trigger: tx, changes };
+            let alarm_ref = obj.children.iter().find(|c| c.class == CLASS_ALARM_SUBSCRIPTION_REF);
+            // a silent alarm subscription is kept, but never gets an alarm
+            let alarm = alarm_ref
+                .filter(|r| !(md.alarm_needs_reference && r.attr(ATTR_ALARM_SUB_REF_SEND_TEXTS).is_none()))
+                .map(|_| (id + 1, Vec::new()));
+            let mut s = FakeSub { id, refs: HashMap::new(), credit: -1, tick: 0, trigger: tx, changes, alarm };
             if let Some(c) = obj.attr(ATTR_SUB_CREDIT_LIMIT).and_then(|v| v.v.as_i16()) {
                 s.credit = c;
             }
@@ -748,7 +794,9 @@ impl Fake {
                     i += 5 + nf.max(1);
                 }
             }
-            let _ = s.trigger.try_send(());
+            if alarm_ref.is_none() {
+                let _ = s.trigger.try_send(()); // the first values
+            }
             md.subs.insert(id, s);
             (id, rx)
         };
@@ -808,26 +856,41 @@ fn pump(state: Arc<Mutex<FakeState>>, link: SharedLink, ver: u8, id: u32, rx: Re
             w.u16(0);
             w.byte(if s.credit < 0 { 0 } else { s.tick });
             w.vlq32(1);
-            if full {
-                let refs = s.refs.clone();
-                for rf in 1..=refs.len() as u32 {
-                    let v = refs.get(&rf).and_then(|k| sub_value(mem, &model.sym, k));
-                    match v {
-                        None => {
-                            w.byte(0x13);
-                            w.u32(rf);
-                        }
-                        Some(v) => {
-                            w.byte(0x92);
-                            w.u32(rf);
-                            v.encode(&mut w);
+            if let Some((ref_id, queue)) = s.alarm.as_mut() {
+                // alarm notification: no items, then part 2 with the DAIs
+                w.byte(0);
+                if !queue.is_empty() {
+                    w.u32(*ref_id);
+                    w.u16(0);
+                    w.byte(0x81);
+                    for d in queue.drain(..) {
+                        d.encode(&mut w);
+                    }
+                }
+                w.u32(0);
+                w.b
+            } else {
+                if full {
+                    let refs = s.refs.clone();
+                    for rf in 1..=refs.len() as u32 {
+                        let v = refs.get(&rf).and_then(|k| sub_value(mem, &model.sym, k));
+                        match v {
+                            None => {
+                                w.byte(0x13);
+                                w.u32(rf);
+                            }
+                            Some(v) => {
+                                w.byte(0x92);
+                                w.u32(rf);
+                                v.encode(&mut w);
+                            }
                         }
                     }
                 }
+                w.byte(0);
+                w.u32(0);
+                w.b
             }
-            w.byte(0);
-            w.u32(0);
-            w.b
         };
         if !send_pdu(&link, ver, &body) {
             return;
@@ -1091,6 +1154,7 @@ impl FakeModel {
             credit_sets: Vec::new(),
             explores: Vec::new(),
             sub_needs_cycle: false,
+            alarm_needs_reference: false,
         };
         md.types.insert(TI_DB1, type_obj(TI_DB1, true, 220, &db1_vars()));
         md.types.insert(TI_DB2, type_obj(TI_DB2, false, 4, &db2_vars()));
