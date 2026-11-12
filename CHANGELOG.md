@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-11-12
+
 ### Fixed
 
 - S7CommPlus over TLS: symbol resolution, `dbs` and `browse` failed on S7-1500 FW V4.x
@@ -100,7 +102,8 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.1...v1.0.2
