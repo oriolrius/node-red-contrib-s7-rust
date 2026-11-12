@@ -11,7 +11,7 @@ use crate::msg::{sub_area_for, ItemAddress};
 use crate::object::Object;
 use crate::plcvalue::Tag;
 use crate::softdt::*;
-use crate::typeinfo::{OffsetInfo, Vartype, VartypeList};
+use crate::typeinfo::{OffsetInfo, Vartype};
 
 /// Cached type-info objects and DB list of a client.
 #[derive(Debug, Default)]
@@ -22,12 +22,21 @@ pub(crate) struct TypeCache {
 
 /// Explore request for type information (recursive, no parents: the PLC
 /// returns nothing for type-info objects when the parents flag is set).
-/// True when the DB with this vartype list is optimized. Older firmware sets
-/// the optimized-access flag only in optimized DBs; S7-1500 FW V4.x (PLCSIM
-/// S4.1) sets it in standard DBs too, and there marks every element as
-/// classic. So a DB with a classic element is a standard DB.
-pub(crate) fn db_optimized(vt: &VartypeList) -> bool {
-    vt.elems.iter().any(|e| e.optimized()) && !vt.elems.iter().any(|e| e.classic())
+/// True when the DB with this type info is optimized.
+///
+/// Tag descriptions (S7-1200 FW V3) carry the block attribute: their
+/// optimized-access flag is reliable, and their Bools always have the classic
+/// bit (it holds the standard bit offset). In vartype lists, older firmware
+/// sets the optimized-access flag only in optimized DBs; S7-1500 FW V4.x
+/// (PLCSIM S4.1) sets it in standard DBs too, and there marks every element
+/// as classic. So a vartype list with a classic element is a standard DB.
+pub(crate) fn db_optimized(ti: &Object) -> bool {
+    let Some(vt) = &ti.vartypes else { return false };
+    let flag = vt.elems.iter().any(|e| e.optimized());
+    if !ti.tag_descrs.is_empty() {
+        return flag;
+    }
+    flag && !vt.elems.iter().any(|e| e.classic())
 }
 
 fn type_info_req(rid: u32) -> ExploreReq {
@@ -143,7 +152,7 @@ impl Client {
                 if let Ok(ti) = self.type_info(rid) {
                     if let Some(vt) = &ti.vartypes {
                         d.vars = vt.elems.len();
-                        d.optimized = db_optimized(vt);
+                        d.optimized = db_optimized(&ti);
                     }
                 }
             }

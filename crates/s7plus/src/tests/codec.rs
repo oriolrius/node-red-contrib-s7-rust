@@ -7,7 +7,9 @@ use std::net::{TcpListener, TcpStream};
 use super::h;
 use crate::blob::{compress_with_dictionary, Dictionaries};
 use crate::browse::{array_access_id, array_indexes, db_optimized};
+use crate::ids::CLASS_TYPE_INFO;
 use crate::legit::*;
+use crate::object::Object;
 use crate::plcvalue::*;
 use crate::softdt::*;
 use crate::stream::{Pdu, Reassembler};
@@ -424,8 +426,13 @@ fn db_optimized_fw4() {
         elems: vec![el(SDT_BBOOL, 0, 28, 0), el(SDT_INT, 0, 24, 2), el(SDT_LREAL, 0, 8, 12), el(SDT_WORD, 0, 26, 20)],
     };
     assert!(std_db.elems.iter().all(|e| e.optimized() && e.classic()));
-    assert!(!db_optimized(&std_db), "standard DB on FW V4.x reported as optimized");
-    assert!(db_optimized(&opt_db), "optimized DB on FW V4.x not reported as optimized");
+    let ti = |vt: &VartypeList| {
+        let mut o = Object::new(0x9200_0001, CLASS_TYPE_INFO);
+        o.vartypes = Some(vt.clone());
+        o
+    };
+    assert!(!db_optimized(&ti(&std_db)), "standard DB on FW V4.x reported as optimized");
+    assert!(db_optimized(&ti(&opt_db)), "optimized DB on FW V4.x not reported as optimized");
     // Older firmware: no optimized-access flag in a standard DB, classic only on Bools.
     let mut old_std = std_db.clone();
     for e in &mut old_std.elems {
@@ -434,6 +441,7 @@ fn db_optimized_fw4() {
             e.bit_info = 0;
         }
     }
-    assert!(!db_optimized(&old_std));
-    assert!(!db_optimized(&VartypeList { first_id: 9, elems: vec![] }), "empty DB");
+    assert!(!db_optimized(&ti(&old_std)));
+    assert!(!db_optimized(&ti(&VartypeList { first_id: 9, elems: vec![] })), "empty DB");
+    assert!(!db_optimized(&Object::new(0x9200_0001, CLASS_TYPE_INFO)), "no vartypes");
 }
