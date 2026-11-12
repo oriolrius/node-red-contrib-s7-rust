@@ -25,9 +25,9 @@ pub struct CertInfo {
     pub ca: bool,
 }
 
-struct Tlv<'a> {
-    tag: u8,
-    body: &'a [u8],
+pub(crate) struct Tlv<'a> {
+    pub(crate) tag: u8,
+    pub(crate) body: &'a [u8],
 }
 
 /// Reads one DER TLV; returns it and the rest.
@@ -201,20 +201,49 @@ pub fn parse(der: &[u8]) -> Option<CertInfo> {
 
 /// notBefore and notAfter of a DER certificate as Unix seconds.
 pub fn validity(der: &[u8]) -> Option<(u64, u64)> {
-    let i = parse(der)?;
-    Some((iso_secs(&i.not_before)?, iso_secs(&i.not_after)?))
-}
-
-/// "YYYY-MM-DDTHH:MM:SSZ" to Unix seconds.
-fn iso_secs(s: &str) -> Option<u64> {
-    let b = s.as_bytes();
-    if b.len() != 20 || !s.is_ascii() {
+    let (cert, _) = tlv(der)?;
+    let (tbs, _) = tlv(cert.body)?;
+    let mut f = items(tbs.body).into_iter();
+    if f.next()?.tag == 0xa0 {
+        f.next()?; // version, then serial
+    }
+    let _sig = f.next()?;
+    let _issuer = f.next()?;
+    let validity = f.next()?;
+    if validity.tag != 0x30 {
         return None;
     }
-    let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
-    let (y, m, d) = (n(0..4)?, n(5..7)?, n(8..10)?);
-    let (hh, mm, ss) = (n(11..13)?, n(14..16)?, n(17..19)?);
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 60 {
+    let v = items(validity.body);
+    if v.len() != 2 {
+        return None;
+    }
+    Some((der_time_secs(&v[0])?, der_time_secs(&v[1])?))
+}
+
+/// A DER time to Unix seconds, strict (RFC 5280 4.1.2.5): UTCTime
+/// "YYMMDDHHMMSSZ" (YY >= 50 is 19YY) or GeneralizedTime "YYYYMMDDHHMMSSZ".
+/// Anything else (other zone, fractions, no seconds) is refused.
+pub(crate) fn der_time_secs(t: &Tlv<'_>) -> Option<u64> {
+    let b = t.body;
+    let digits = match (t.tag, b.len()) {
+        (0x17, 13) | (0x18, 15) => &b[..b.len() - 1],
+        _ => return None,
+    };
+    if b[b.len() - 1] != b'Z' || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let num = |r: std::ops::Range<usize>| digits[r].iter().fold(0i64, |a, d| a * 10 + (d - b'0') as i64);
+    let (y, rest) = if t.tag == 0x17 {
+        let yy = num(0..2);
+        (if yy >= 50 { 1900 + yy } else { 2000 + yy }, 2)
+    } else {
+        (num(0..4), 4)
+    };
+    let (m, d) = (num(rest..rest + 2), num(rest + 2..rest + 4));
+    let (hh, mm, ss) = (num(rest + 4..rest + 6), num(rest + 6..rest + 8), num(rest + 8..rest + 10));
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let mdays = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if !(1..=12).contains(&m) || d < 1 || d > mdays[(m - 1) as usize] || hh > 23 || mm > 59 || ss > 59 {
         return None;
     }
     // days from civil (H. Hinnant)
