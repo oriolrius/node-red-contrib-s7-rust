@@ -44,3 +44,5 @@ pub(crate) fn dial_fake(pdu: u16) -> (Conn, FakeCpu) {
     let cn = Conn::dial(&opts(&addr)).expect("dial");
     (cn, f)
 }
+
+mod partner_test;

@@ -31,17 +31,21 @@
       password: { type: 'password' },
     },
     label: function () {
-      const p = this.protocol === 's7plus' ? 'S7+' : `S7-${this.cpu}`;
+      const p = this.protocol === 's7plus' ? 'S7+' : this.protocol === 's7partner' ? 'S7 partner' : `S7-${this.cpu}`;
       return this.name || (this.host ? `${p} ${this.host}:${this.port || 102}` : 's7 endpoint');
     },
     oneditprepare: function () {
       const node = this;
       const sync = () => {
-        const plus = $('#node-config-input-protocol').val() === 's7plus';
+        const proto = $('#node-config-input-protocol').val();
+        const plus = proto === 's7plus';
+        const partner = proto === 's7partner';
         const tls = plus && $('#node-config-input-tls').prop('checked');
         const v = $('#node-config-input-certVerify').val();
-        $('.s7rs-classic').toggle(!plus);
+        $('.s7rs-classic').toggle(!plus && !partner);
         $('.s7rs-plus').toggle(plus);
+        $('.s7rs-tsap').toggle(!plus);
+        $('.s7rs-partner').toggle(partner);
         $('.s7rs-tls').toggle(tls);
         $('.s7rs-cert-fp').toggle(tls && v === 'fingerprint');
         $('.s7rs-cert-trusted').toggle(tls && v === 'trusted');
@@ -81,6 +85,7 @@
     <select id="node-config-input-protocol">
       <option value="s7" data-i18n="s7rs-endpoint.protocol.s7"></option>
       <option value="s7plus" data-i18n="s7rs-endpoint.protocol.s7plus"></option>
+      <option value="s7partner" data-i18n="s7rs-endpoint.protocol.s7partner"></option>
     </select>
   </div>
   <div class="form-row">
@@ -115,12 +120,16 @@
       <option value="3" data-i18n="s7rs-endpoint.link.basic"></option>
     </select>
   </div>
-  <div class="form-row s7rs-classic">
+  <div class="form-row s7rs-tsap">
     <label for="node-config-input-localTsap" data-i18n="s7rs-endpoint.label.tsaps"></label>
     <input type="text" id="node-config-input-localTsap" placeholder="10.00" style="width: 100px" />
     <input type="text" id="node-config-input-remoteTsap" placeholder="20.00" style="width: 100px" />
   </div>
-  <div class="form-row s7rs-classic">
+  <div class="form-row s7rs-partner">
+    <label>&nbsp;</label>
+    <span style="opacity: 0.7" data-i18n="s7rs-endpoint.hint.partner"></span>
+  </div>
+  <div class="form-row s7rs-tsap">
     <label for="node-config-input-pdu" data-i18n="s7rs-endpoint.label.pdu"></label>
     <input type="text" id="node-config-input-pdu" placeholder="960" style="width: 100px" />
   </div>

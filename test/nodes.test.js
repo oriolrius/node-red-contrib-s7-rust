@@ -18,7 +18,7 @@ const RED_MODULE = process.env.S7RS_NODE_RED || 'node-red';
 helper.init(require.resolve(RED_MODULE));
 const fakes = loadAddon();
 
-const NODES = ['endpoint', 'read', 'write', 'watch', 'info', 'alarms'].map((n) => require(`../nodes/s7rs-${n}.js`));
+const NODES = ['endpoint', 'read', 'write', 'watch', 'info', 'alarms', 'bsend', 'brcv'].map((n) => require(`../nodes/s7rs-${n}.js`));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function until(cond, ms = 5000) {
@@ -449,4 +449,44 @@ test('S7CommPlus: s7 alarms keeps an alarm that went without acknowledgement', a
   al.receive({ ack: 'all' });
   await until(() => got.some((m) => m.topic === id && m.state === 'acknowledged'));
   await until(() => last === '1 active');
+});
+
+test('S7 partner: s7 brcv and s7 bsend (BSEND/BRCV)', async () => {
+  const addr = fakes.startFakePartner(240);
+  const [host, port] = addr.split(':');
+  await load({ protocol: 's7partner', host, port, localTsap: '03.00', remoteTsap: '10.01' }, [
+    { id: 'rx', type: 's7rs-brcv', rid: '' },
+    { id: 'rx1', type: 's7rs-brcv', rid: '1' },
+    { id: 'tx', type: 's7rs-bsend', rid: '2' },
+  ]);
+  const all = collect('rx');
+  const one = collect('rx1');
+  // PLC BSEND -> both receivers (the second only R_ID 1); 1500 bytes are fragmented
+  const big = Array.from({ length: 1500 }, (_, i) => i % 251);
+  await until(() => fakes.fakePartnerBsend(addr, 3, [9, 9]));
+  assert.ok(fakes.fakePartnerBsend(addr, 1, big));
+  await until(() => all.length === 2 && one.length === 1);
+  assert.deepEqual([all[0].rid, [...all[0].payload]], [3, [9, 9]]);
+  assert.ok(Buffer.isBuffer(one[0].payload) && one[0].payload.equals(Buffer.from(big)));
+  assert.equal(one[0].topic, '1');
+
+  // s7 bsend: Buffer, byte array, string; msg.rid overrides
+  const out = await ask('tx', { payload: Buffer.from(big) });
+  assert.deepEqual([out.s7.rid, out.s7.bytes], [2, 1500]);
+  await ask('tx', { payload: 'hi', rid: 5 });
+  const got = fakes.fakePartnerReceived(addr);
+  assert.deepEqual(got.map((b) => [b[0], b.length - 1]), [[2, 1500], [5, 2]]);
+  assert.deepEqual(got[1].slice(1), [104, 105]);
+  // refused by the BRCV, bad input
+  fakes.fakePartnerRefuse(addr, 2);
+  await assert.rejects(ask('tx', { payload: [1] }), /refused/);
+  await assert.rejects(ask('tx', { payload: {} }), /Buffer, a byte array or a string/);
+  await assert.rejects(ask('tx', { payload: [1], rid: -1 }), /R_ID/);
+
+  // the PLC restarts: the endpoint connects again and the receivers go on
+  fakes.fakePartnerDropConnections(addr);
+  const ep = helper.getNode('ep');
+  await until(() => ep.state.state === 'connected' && fakes.fakePartnerBsend(addr, 1, [7]), 15000);
+  await until(() => one.length === 2, 15000);
+  assert.deepEqual([...one[1].payload], [7]);
 });

@@ -9,6 +9,7 @@
 //! Node-API call per property. Diagnostics (`call`) return JSON text.
 
 mod device;
+mod partner;
 mod plus;
 
 use std::collections::HashMap;
@@ -428,6 +429,28 @@ impl S7Native {
         Ok(())
     }
 
+    /// subscribeBlocks({conn, sub}): blocks of the PLC BSEND on an S7
+    /// partner endpoint, as data events with `alarms` = JSON text
+    /// {snapshot: false, alarms: [{rid, data (hex)}]}. Stop with unsubscribe(sub).
+    #[napi]
+    pub fn subscribe_blocks(&self, conn: String, sub: String) -> napi::Result<()> {
+        if sub.is_empty() {
+            return Err(napi_err("subscribeBlocks: sub is required"));
+        }
+        let tx = self.sender(&conn)?;
+        self.unsubscribe(sub.clone());
+        let stop = Arc::new(AtomicBool::new(false));
+        let generation = SUB_GEN.fetch_add(1, Ordering::Relaxed);
+        let (data, s2, s, c) = (self.on_data.clone(), stop.clone(), sub.clone(), conn.clone());
+        let key = format!("{sub}#{generation}");
+        std::thread::Builder::new()
+            .name(format!("s7brcv-{sub}"))
+            .spawn(move || alarm_loop(s, c, key, serde_json::json!({}), tx, s2, data))
+            .map_err(napi_err)?;
+        self.subs.lock().unwrap().insert(sub, SubHandle { conn, stop });
+        Ok(())
+    }
+
     #[napi]
     pub fn unsubscribe(&self, sub: String) {
         // Never join here: the subscription thread may wait for this (JS) thread.
@@ -775,6 +798,48 @@ mod fakes {
     use std::sync::Mutex;
 
     static KEEP: Mutex<Vec<Box<dyn std::any::Any + Send>>> = Mutex::new(Vec::new());
+
+    fn with_partner<T>(addr: &str, f: impl FnOnce(&s7::partner_fake::FakePartnerPlc) -> T) -> Option<T> {
+        let keep = KEEP.lock().unwrap();
+        keep.iter().filter_map(|b| b.downcast_ref::<s7::partner_fake::FakePartnerPlc>()).find(|f| f.addr() == addr).map(f)
+    }
+
+    /// Starts a fake PLC with an S7 connection for BSEND/BRCV (TSAPs: PLC
+    /// 10.01, partner 03.00) and this PDU size; returns "127.0.0.1:port".
+    #[napi]
+    pub fn start_fake_partner(pdu: Option<u32>) -> String {
+        let f = s7::partner_fake::FakePartnerPlc::start(pdu.unwrap_or(240) as u16);
+        let a = f.addr();
+        KEEP.lock().unwrap().push(Box::new(f));
+        a
+    }
+
+    /// The fake PLC program calls BSEND with this block.
+    #[napi]
+    pub fn fake_partner_bsend(addr: String, rid: u32, data: Vec<u8>) -> bool {
+        with_partner(&addr, |f| f.bsend(rid, data)).unwrap_or(false)
+    }
+
+    /// The blocks the fake BRCV got: [{rid, data}] (data as a byte array).
+    #[napi]
+    pub fn fake_partner_received(addr: String) -> Vec<Vec<u32>> {
+        with_partner(&addr, |f| {
+            f.received().into_iter().map(|b| std::iter::once(b.r_id).chain(b.data.into_iter().map(u32::from)).collect()).collect()
+        })
+        .unwrap_or_default()
+    }
+
+    /// The fake BRCV refuses blocks with this R_ID (none: accept all).
+    #[napi]
+    pub fn fake_partner_refuse(addr: String, rid: Option<u32>) {
+        with_partner(&addr, |f| f.refuse(rid));
+    }
+
+    /// Closes the connections of the fake partner PLC.
+    #[napi]
+    pub fn fake_partner_drop_connections(addr: String) {
+        with_partner(&addr, |f| f.drop_connections());
+    }
 
     /// Starts a fake classic CPU (M 4096 B, I 1024 B, DB1 2000 B + the given DBs);
     /// returns "127.0.0.1:port". Lives until the process exits.

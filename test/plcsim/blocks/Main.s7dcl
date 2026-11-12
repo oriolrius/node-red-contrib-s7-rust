@@ -19,5 +19,7 @@ ORGANIZATION_BLOCK "Main"
         END_IF;
         // alarms for the s7rs alarm tests (Program_Alarm in FB AlarmGen)
         "AlarmGen_DB"();
+        // BSEND / BRCV over the S7 connection S7_Connection_1 (FB PartnerComm)
+        "PartnerComm_DB"();
     END_NETWORK
 END_ORGANIZATION_BLOCK

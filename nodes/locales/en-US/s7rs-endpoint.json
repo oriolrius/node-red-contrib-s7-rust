@@ -27,7 +27,8 @@
     },
     "protocol": {
       "s7": "S7comm (classic, PUT/GET)",
-      "s7plus": "S7CommPlus (S7-1200/1500, symbols)"
+      "s7plus": "S7CommPlus (S7-1200/1500, symbols)",
+      "s7partner": "S7 partner (BSEND/BRCV over an S7 connection)"
     },
     "certVerify": {
       "none": "not checked",
@@ -60,7 +61,8 @@
       "certName": "empty: the host (IP address or DNS name)"
     },
     "hint": {
-      "gap": "merge reads closer than N bytes; -1 = off"
+      "gap": "merge reads closer than N bytes; -1 = off",
+      "partner": "TSAPs of the S7 connection in TIA Portal: local = partner TSAP (e.g. 03.00), remote = PLC TSAP (e.g. 10.01)"
     },
     "errors": {
       "open": "S7 __host__: __error__"

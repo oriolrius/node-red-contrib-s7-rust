@@ -1,0 +1,11 @@
+{
+  "s7rs-bsend": {
+    "label": { "name": "Name", "endpoint": "PLC (S7 partner)" },
+    "placeholder": { "rid": "empty: msg.rid" },
+    "errors": {
+      "noEndpoint": "no S7 endpoint configured",
+      "rid": "no R_ID: set it in the node or in msg.rid (0..4294967295)",
+      "payload": "msg.payload must be a Buffer, a byte array or a string of 1..65534 bytes"
+    }
+  }
+}

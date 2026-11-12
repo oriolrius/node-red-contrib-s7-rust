@@ -25,6 +25,21 @@ All notable changes to this project are documented here. The format follows
   "Acknowledgement"; `live_alarms.js` acknowledges it. Tested on PLCSIM Advanced V8 (S7-1500,
   FW S4.1): acknowledged in about 15 ms; an alarm of a class without acknowledgement gives
   `ackFailed` (0x8005).
+- BSEND / BRCV (S7 communication over an S7 connection): the endpoint protocol "S7 partner" and
+  two nodes. `s7 brcv` sends a message for each block of a PLC `BSEND` (`msg.payload` Buffer,
+  `msg.rid`; filter by R_ID); `s7 bsend` sends `msg.payload` (Buffer, byte array or string) to a
+  PLC `BRCV` with the R_ID of the node or `msg.rid`. Blocks up to 65534 bytes, in fragments of
+  the PDU size. Node-RED connects actively with the TSAPs of the S7 connection and connects again
+  after a loss. Blocks that come before the first `s7 brcv` node starts go to that node.
+- Rust crate `s7`: `partner::Partner` (connect, `recv`, `send`) and a fake PLC
+  (`partner_fake`). The acknowledgement of a fragmented block carries the IDSeq of the fragments
+  as its sequence and the PDU reference of the request, as an S7-1500 does (snap7 uses a new
+  sequence; PLCSIM then stops after the first fragment).
+- `test/plcsim`: FB `PartnerComm`, DBs `PartnerData` / `PartnerComm_DB`, `add-s7-connection.ps1`
+  (TIA Portal Openness: S7 connection to an unspecified partner), `download-hw-sw.ps1` (download
+  with the hardware configuration; the TIA Portal MCP loads the software only) and
+  `live_partner.js`. Tested on PLCSIM Advanced V8 (S7-1500, FW S4.1): 16 and 1800 bytes both
+  ways.
 
 ## [1.2.2] - 2026-11-12
 

@@ -85,6 +85,8 @@ Then restart Node-RED. The nodes are in the **network** category of the palette.
 | `s7 watch` | Sends only the changes. Mode "read cyclically": a Rust thread reads the tags at an interval, with an optional conditional rate ("Fast while" a tag is true). Mode "PLC subscription" (S7CommPlus): the PLC sends the changes. |
 | `s7 alarms` | S7CommPlus: a message when a PLC alarm comes or goes (alarm subscription; the active alarms at start). `msg.ack` acknowledges alarms. |
 | `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `certificate`, `dbs`, `browse`, `alarms`, `limits`. |
+| `s7 bsend` | Sends `msg.payload` as a block to a PLC `BRCV` (S7 connection, protocol "S7 partner"). Writes to the PLC. |
+| `s7 brcv` | A message for each block of a PLC `BSEND` (S7 connection, protocol "S7 partner"). |
 
 Every node has full help in the editor sidebar. Bad tags never stop the other tags: they give
 `null` and an entry in `msg.s7.errors`, or `msg.quality = "bad"` in a watch.
@@ -131,7 +133,8 @@ This map shows each protocol function and where it is available. It is strict: a
 | Alarms and messages | userdata group 4 alarm subfunctions, NOTIFY, ALARM_S/ALARM_8 | ❌ | — |
 | Protection level password | userdata group 5 (security) | ❌ | — |
 | Programmer commands, force | userdata group 1 | ❌ | — |
-| BSEND/BRCV, USEND/URCV | userdata group 6 | ❌ | — |
+| BSEND/BRCV | userdata group 6 (type/group 0x46 / 0x86), fragments of the PDU size, blocks up to 65534 bytes, over an S7 connection (Node-RED active, TSAPs of the connection) | ✅ | `s7 bsend`, `s7 brcv` (endpoint protocol "S7 partner") |
+| USEND/URCV | userdata group 6, unacknowledged | ❌ | — |
 | S7 routing to other subnets | COTP with routing parameters | ❌ | — |
 
 ### S7CommPlus (crate `s7plus`)
@@ -192,6 +195,15 @@ certificate of the deployed endpoint: compare it with TIA Portal before you trus
 check fails, the endpoint stays disconnected and the error shows the fingerprint it got; *Read
 from the PLC* then shows the refused certificate with a warning (`refused: true`), so a new PLC
 certificate can be checked and taken over.
+
+**S7 partner (BSEND/BRCV)**: the PLC program sends and receives data blocks with `BSEND` /
+`BRCV` over an S7 connection; Node-RED is the partner. In TIA Portal, add an S7 connection to an
+unspecified partner (Devices & networks → Connections), with the active connection establishment on
+the partner side, clear "SIMATIC-ACC" to get numeric TSAPs, and set the partner address to the
+address the PLC sees for Node-RED. Load the hardware configuration (the connection is part of it).
+In the endpoint select "S7 partner" and enter the TSAPs of the connection: local = the partner
+TSAP (for example `03.00`), remote = the PLC TSAP (for example `10.01`). `BSEND` / `BRCV` use the
+connection ID of TIA Portal and an R_ID that both sides agree on.
 
 ## Addresses
 
@@ -259,6 +271,8 @@ All examples use the address `192.168.0.1`. Change it in the endpoint.
 - `setClock` and `syncClock` change the PLC clock. The admin API refuses them.
 - `s7 alarms` acknowledges alarms when a message with `msg.ack` arrives (a write to the PLC), never
   by itself. `s7 info` action `acknowledge` does the same; the admin API refuses it.
+- `s7 bsend` sends a data block to a `BRCV` of the PLC program (the program decides what to do
+  with it).
 - `s7 write` writes to the PLC at once. Test on a simulator (for example PLCSIM Advanced) before
   you write to a machine.
 

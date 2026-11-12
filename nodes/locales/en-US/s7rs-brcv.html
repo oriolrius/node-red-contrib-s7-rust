@@ -1,0 +1,22 @@
+<script type="text/html" data-help-name="s7rs-brcv">
+  <p>Receives the data blocks that the PLC sends with <code>BSEND</code> (S7 communication over an
+    S7 connection). One message per block. The endpoint must use the protocol <i>S7 partner
+    (BSEND/BRCV)</i>.</p>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">Buffer</span></dt>
+    <dd>the bytes of the block (up to 65534).</dd>
+    <dt>rid <span class="property-type">number</span></dt>
+    <dd>the R_ID of the BSEND call; also in <code>msg.topic</code> as text.</dd>
+    <dt>ts <span class="property-type">string</span></dt>
+    <dd>receive time (ISO, UTC).</dd>
+  </dl>
+  <h3>Details</h3>
+  <p><b>R_ID</b>: only blocks with this R_ID; empty: every block. Several nodes on one endpoint each
+    get every block.</p>
+  <p>The PLC sends only while Node-RED is connected: a BSEND without a connection ends with an error
+    in the PLC (STATUS of BSEND). Blocks that come before the first <code>s7 brcv</code> node of the
+    endpoint starts go to that node (at most 100).</p>
+  <p>Decode the bytes with a function node (<code>msg.payload.readInt16BE(0)</code>, …): the PLC sends
+    the memory of its BSEND area in S7 byte order (big endian).</p>
+</script>

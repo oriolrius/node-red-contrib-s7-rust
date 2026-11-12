@@ -16,7 +16,9 @@
     "industrial",
     "iiot",
     "rust",
-    "napi"
+    "napi",
+    "bsend",
+    "brcv"
   ],
   "homepage": "https://github.com/oriolrius/node-red-contrib-s7-rust#readme",
   "bugs": {
@@ -56,7 +58,9 @@
       "s7rs-write": "nodes/s7rs-write.js",
       "s7rs-watch": "nodes/s7rs-watch.js",
       "s7rs-info": "nodes/s7rs-info.js",
-      "s7rs-alarms": "nodes/s7rs-alarms.js"
+      "s7rs-alarms": "nodes/s7rs-alarms.js",
+      "s7rs-bsend": "nodes/s7rs-bsend.js",
+      "s7rs-brcv": "nodes/s7rs-brcv.js"
     }
   },
   "scripts": {
