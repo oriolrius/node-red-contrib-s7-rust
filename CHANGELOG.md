@@ -19,7 +19,8 @@ All notable changes to this project are documented here. The format follows
   it ("Read from the PLC") and copies the fingerprint and the PEM to the fields. Action `info`:
   new fields `certificateCheck`, `certificateFingerprint`.
 - Rust crate `s7plus`: `TlsOptions::verify` (`CertVerify`: `None`, `Fingerprint`, `Trusted`),
-  `Error::Certificate`, `SessionInfo::peer_cert`, a small X.509 reader (`x509::parse`,
+  `Error::Certificate` (also for `verify` together with a caller `config`, which has its own
+  verifier), `SessionInfo::peer_cert`, a small X.509 reader (`x509::parse`,
   `x509::pem`); the fake PLC can use a certificate signed by a CA (`enable_tls_signed`).
 - `test/plcsim/live_cert.js`: the check against PLCSIM. Tested on PLCSIM Advanced V8 (S7-1500,
   FW S4.1): the PLC certificate is self-signed (CN `PLC-1/Communication-1`, IP address in the

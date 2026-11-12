@@ -661,6 +661,25 @@ fn certificate_verification_fake() {
     assert!(e.contains("not signed by a trusted certificate") && e.contains("CN=PLC-1/Communication-1"), "unexpected certificate error");
 }
 
+/// A caller TLS configuration and a certificate check cannot be combined
+/// (the check would be ignored).
+#[test]
+fn certificate_check_with_caller_config_refused() {
+    let f = FakePlc::start().unwrap();
+    f.enable_tls().unwrap();
+    let p = crate::tls::provider();
+    let cfg = rustls::ClientConfig::builder_with_provider(p.clone())
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .unwrap()
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(crate::tls::NoCertVerification(p)))
+        .with_no_client_auth();
+    let tls = TlsOptions { config: Some(Arc::new(cfg)), verify: CertVerify::fingerprints(&"00".repeat(32)).unwrap(), ..Default::default() };
+    let r = Client::connect(Options { addr: f.addr(), timeout: Duration::from_secs(2), tls: Some(tls), ..Default::default() });
+    let e = refused(r, "wrong fingerprint accepted with a caller config");
+    assert!(matches!(&e, Error::Certificate(t) if t.contains("not both")), "unexpected error");
+}
+
 #[test]
 fn certificate_signed_by_project_ca_fake() {
     let f = FakePlc::start().unwrap();

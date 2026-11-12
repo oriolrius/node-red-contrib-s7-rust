@@ -112,7 +112,9 @@ pub fn fingerprint_text(f: &[u8; 32]) -> String {
 /// TLS options of a connection.
 #[derive(Clone, Default)]
 pub struct TlsOptions {
-    /// None = TLS 1.3 with the ring provider and no certificate verification.
+    /// None = TLS 1.3 with the ring provider and the check of `verify`.
+    /// A caller configuration must do its own certificate check: with
+    /// `verify` set as well, the connection fails with [`Error::Certificate`].
     pub config: Option<Arc<rustls::ClientConfig>>,
     /// Optional NSS key log (Wireshark), e.g. [`NssKeyLog`].
     pub key_log: Option<Arc<dyn rustls::KeyLog>>,
@@ -379,6 +381,10 @@ impl ServerCertVerifier for PlcCertVerifier {
 /// certificate verifier (None for a caller `config`).
 pub(crate) fn client_config(o: &TlsOptions) -> Result<(Arc<rustls::ClientConfig>, Option<Arc<PlcCertVerifier>>)> {
     let (mut cfg, ver) = match &o.config {
+        // a caller configuration has its own verifier: a check here would be ignored
+        Some(_) if o.verify != CertVerify::None => {
+            return Err(Error::Certificate("TlsOptions: set either config (with its own certificate verifier) or verify, not both".into()))
+        }
         Some(c) => ((**c).clone(), None),
         None => {
             let v = Arc::new(PlcCertVerifier::new(o.verify.clone()));
