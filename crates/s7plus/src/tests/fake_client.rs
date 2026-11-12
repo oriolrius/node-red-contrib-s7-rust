@@ -518,6 +518,53 @@ fn alarms_fake() {
     assert!(c.active_alarms(true).is_err());
 }
 
+// Alarm notifications: a DAI per coming / going. S7-1500 FW V4.x (PLCSIM S4.1)
+// sends them only to the S7CommPlusDriver layout.
+#[test]
+fn alarm_subscription_fake() {
+    let wait_alarms = |c: &Client, sub: &mut crate::Subscription, ms: u64| {
+        let mut got = Vec::new();
+        let t0 = std::time::Instant::now();
+        while t0.elapsed() < Duration::from_millis(ms) {
+            match sub.next(c, Duration::from_millis(50)) {
+                Ok(n) => got.extend(n.alarm_objects.iter().map(decode_alarm)),
+                Err(e) if e.is_timeout() => {}
+                Err(e) => panic!("{e}"),
+            }
+        }
+        got
+    };
+    let id = (db_area(5) as u64) << 32 | 1 << 16;
+    for (fw4, reference, want) in [(false, false, true), (true, false, false), (true, true, true)] {
+        let f = FakePlc::start().unwrap();
+        if fw4 {
+            f.lock().model.alarm_needs_reference = true;
+        }
+        let c = dial(&f, Options::default());
+        let mut sub = c.subscribe_alarms(&AlarmSubOptions { reference, languages: vec![1033], with_texts: true }).unwrap();
+        f.raise_alarm(id, true, vec![vec![1, 1, 0, 0], vec![0, 77]]);
+        f.raise_alarm(id, false, vec![]);
+        let got = wait_alarms(&c, &mut sub, 300);
+        let case = format!("fw4={fw4} reference={reference}");
+        if !want {
+            assert!(got.is_empty(), "{case}: {got:?}");
+            sub.close(&c).unwrap();
+            continue;
+        }
+        assert_eq!(got.len(), 2, "{case}: {got:?}");
+        let (on, off) = (&got[0], &got[1]);
+        assert!(on.cpu_alarm_id == id && on.all_states == 0x87 && on.going.is_none(), "{case}: coming {on}");
+        assert_eq!(on.coming.as_ref().map(|x| x.assoc_values[1].clone()), Some(vec![0, 77]), "{case}");
+        assert!(off.all_states == 0x86 && off.going.is_some() && off.coming.is_none(), "{case}: going {off}");
+        assert!(c.active_alarms(false).unwrap().iter().all(|a| a.cpu_alarm_id != id), "{case}: still active");
+        sub.close(&c).unwrap();
+    }
+    // the layout by PLC
+    assert!(!AlarmSubOptions::for_plc("1;6ES7 212-1BE31-0XB0 ;V3.0").reference);
+    assert!(AlarmSubOptions::for_plc("1;6ES7 SIM-01500-APLC;S4.1").reference);
+    assert!(AlarmSubOptions::for_plc("1;6ES7 513-1AL02-0AB0 ;V2.9").reference);
+}
+
 #[test]
 fn comments_fake() {
     let f = FakePlc::start().unwrap();

@@ -1,0 +1,24 @@
+{
+  "s7rs-alarms": {
+    "label": {
+      "name": "Name",
+      "endpoint": "PLC",
+      "initial": "send the active alarms at start",
+      "layout": "Subscription"
+    },
+    "layout": {
+      "auto": "automatic (by CPU)",
+      "tia": "TIA Portal layout (S7-1200)",
+      "reference": "S7CommPlusDriver layout (S7-1500)"
+    },
+    "portLabel": {
+      "out": "alarm events"
+    },
+    "status": {
+      "active": "__n__ active"
+    },
+    "errors": {
+      "subscribe": "alarm subscription: __error__"
+    }
+  }
+}

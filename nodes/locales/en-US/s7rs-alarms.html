@@ -1,0 +1,35 @@
+<script type="text/html" data-help-name="s7rs-alarms">
+  <p>Sends a message when a PLC alarm comes or goes (S7CommPlus, S7-1200/1500). The PLC sends the
+    alarms: there is no polling.</p>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>topic <span class="property-type">string</span></dt>
+    <dd>the alarm id (CPU alarm id, hex): source block RID and alarm number.</dd>
+    <dt>state <span class="property-type">string</span></dt>
+    <dd><code>coming</code> (the alarm is active) or <code>going</code>.</dd>
+    <dt>payload <span class="property-type">object</span></dt>
+    <dd>the alarm: <code>id</code>, <code>name</code>, <code>state</code>, <code>allStates</code>,
+      <code>coming</code> and <code>going</code> (<code>time</code>, <code>ackTime</code>,
+      <code>values</code>: the associated values as PLC bytes), <code>priority</code>,
+      <code>alarmClass</code>, <code>seq</code>, <code>texts</code> (<code>lang</code>, <code>id</code>,
+      <code>text</code>).</dd>
+    <dt class="optional">initial <span class="property-type">boolean</span></dt>
+    <dd>true for the alarms that were active when the subscription started.</dd>
+    <dt>ts <span class="property-type">string</span></dt>
+    <dd>receive time (ISO, UTC). The PLC time is in <code>payload.coming.time</code> or
+      <code>payload.going.time</code>.</dd>
+  </dl>
+  <h3>Details</h3>
+  <p>At start, and again after a reconnect, the node subscribes to the alarms of the CPU and
+    (option) sends the active alarms with <code>msg.initial</code>. Then one message per alarm
+    event. The node status shows the number of active alarms; it starts again from the PLC list on
+    each new subscription (alarms that went while the PLC was not reachable are gone). Without "send
+    the active alarms at start" it counts only the alarms that came since the last subscription.</p>
+  <h4>Subscription</h4>
+  <p>The CPU families need different subscription layouts. <b>automatic</b> uses the TIA Portal layout
+    for an S7-1200 and the S7CommPlusDriver layout for the other CPUs (an S7-1500 FW V4.x accepts the
+    TIA Portal layout but sends no alarms with it). Select a layout when the automatic one gets no
+    alarms.</p>
+  <p>Alarm texts come from the PLC when the project has them (alarm text of the Program_Alarm
+    instance). Acknowledging alarms is not supported.</p>
+</script>

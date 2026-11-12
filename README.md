@@ -83,6 +83,7 @@ Then restart Node-RED. The nodes are in the **network** category of the palette.
 | `s7 read` | Reads tags when a message arrives. Output: one value, `{tag: value}` or an array. |
 | `s7 write` | Writes the tag of the node, the tag in `msg.topic`, or `msg.payload = {tag: value, …}` in one request. |
 | `s7 watch` | Sends only the changes. Mode "read cyclically": a Rust thread reads the tags at an interval, with an optional conditional rate ("Fast while" a tag is true). Mode "PLC subscription" (S7CommPlus): the PLC sends the changes. |
+| `s7 alarms` | S7CommPlus: a message when a PLC alarm comes or goes (alarm subscription; the active alarms at start). |
 | `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `dbs`, `browse`, `alarms`, `limits`. |
 
 Every node has full help in the editor sidebar. Bad tags never stop the other tags: they give
@@ -150,7 +151,7 @@ This map shows each protocol function and where it is available. It is strict: a
 | CPU operating state | read of the PLC program object | ✅ | `s7 info`: `cpuState` |
 | Communication limits | read of the PLC limit attributes | ✅ | `s7 info`: `limits`, `info` |
 | Active alarms | alarm objects and text libraries | ✅ | `s7 info`: `alarms` |
-| Alarm subscription | CreateObject subscription, notifications | 🔒 | — |
+| Alarm subscription | CreateObject alarm subscription (TIA Portal or S7CommPlusDriver layout), DAI notifications | ✅ | `s7 alarms` |
 | Variable subscription | CreateObject subscription with a cycle time, notifications, credit limit | ✅ | `s7 watch` (mode "PLC subscription") |
 | Set CPU operating state (RUN/STOP) | SetVariable 0x04F2 | 🔒 | — |
 | Block upload / download, program changes | BeginSequence 0x0556, EndSequence 0x0560, Invoke 0x056B | ❌ | — |

@@ -11,7 +11,7 @@ use crate::subscribe::{decode_notification, decode_notification_layout, SubOptio
 use crate::textfmt::hex;
 use crate::value::Value;
 use crate::wire::{Reader, Writer};
-use crate::AlarmSubOptions;
+use crate::{decode_alarm, AlarmSubOptions};
 
 const TIA_CREATE_OBJECT_RES: &str = "32000004ca00000002360002871c8715a100000120821f0000a38169001500a3823200170000013a823b00048200823c00048140823d00048480c040823e00048480c040823f00151b313b36455337203231322d31424533312d30584230203b56332e308240001505323b35343482410003000300a2000000";
 const TIA_SET_MULTI_VARS_REQ: &str = "3100000542000000030000039c340000039c010182320100170000013a823b00048200823c00048140823d00048480c040823e00048480c040823f001500824000151a313b36455337203231322d31424533312d305842303b56332e308241000300030000000004e88969001200000000896a001300896b0004000000000000";
@@ -188,4 +188,39 @@ fn golden_notifications_fw4() {
         }
         last_ts = Some(ts);
     }
+}
+
+// Alarm notifications of PLCSIM Advanced V8 (CPU 1513-1 PN, FW S4.1, TLS),
+// S7CommPlusDriver layout: Program_Alarm 1 of DB5 (instance DB of the FB
+// AlarmGen) comes with SD_1 = Int 77, then goes.
+#[test]
+fn golden_alarm_notifications_fw4() {
+    let coming = [
+        "70000fd904000000000001000006601174d8b6ed010051010001000081a1720087eb947984800000a3816900150954656d70",
+        "4461695f31a3946e000d8a0e000500010000a3946f000287a3947000030100a39471001700000d919b120002879b13001018",
+        "e744306e89ab2e9b141014119080821300000000000000000204010100009080800500000000000000000202004d00000000",
+        "00000000000000000000000000000000000000000000000000009c3e0010000000000000000000a39f6f000802a3bd050014",
+        "00110103dc5f00000200000000000022000000a3bd6d000416a3951b4014a0a4800200012000a200000000",
+    ]
+    .concat();
+    let going = [
+        "70000fd9040000000000030200066011751a1c53010051010001000081a1720087eb947984800000a3816900150954656d70",
+        "4461695f31a3946e000d8a0e000500010000a3946f000286a3947000030100a39475001700000d919b120002869b13001018",
+        "e744316dfe2b109b141014119080821300000000000000000204010100009080800500000000000000000202004d00000000",
+        "00000000000000000000000000000000000000000000000000009c3e0010000000000000000000a39f6f000802a3bd050014",
+        "00110103dc5f00000200000000000022000000a3bd6d000416a3951b4014a0a4800200012000a200000000",
+    ]
+    .concat();
+    let id = 0x8a0e_0005_0001_0000u64;
+    let n = decode_notification(&h(&coming)).unwrap();
+    assert!(n.values.is_empty() && n.alarm_objects.len() == 1, "{n}");
+    let a = decode_alarm(&n.alarm_objects[0]);
+    assert!(a.cpu_alarm_id == id && a.all_states == 0x87 && a.going.is_none(), "coming {a}");
+    let c = a.coming.as_ref().unwrap();
+    assert!(c.timestamp.is_some() && c.ack_time.is_none(), "{c:?}");
+    assert_eq!(c.assoc_values[1], vec![0, 77], "SD_1");
+    assert_eq!(a.hmi.map(|x| x.alarm_class), Some(34));
+    let n = decode_notification(&h(&going)).unwrap();
+    let a = decode_alarm(&n.alarm_objects[0]);
+    assert!(a.cpu_alarm_id == id && a.all_states == 0x86 && a.coming.is_none() && a.going.is_some(), "going {a}");
 }

@@ -36,6 +36,18 @@ pub enum Push {
     Down,
 }
 
+/// One poll of a PLC alarm subscription (S7CommPlus).
+pub enum AlarmPush {
+    /// Alarm events (JSON objects, see `plus::alarm_json`). `true`: a
+    /// snapshot of a new subscription (the active alarms, maybe none): the
+    /// receiver forgets the alarms it knew.
+    Alarms(Vec<J>, bool),
+    /// No notification in the wait time.
+    Idle,
+    /// No connection: the caller waits (not on the connection thread) and tries again.
+    Down,
+}
+
 /// A PLC connection. All methods run on the connection thread.
 pub trait Device: Send + Sync {
     /// Reads all tags; per-tag errors in `Out`. The second value is the
@@ -59,6 +71,15 @@ pub trait Device: Send + Sync {
     }
     /// Deletes the PLC subscription `sub` (if any).
     fn push_close(&self, _sub: &str) {}
+    /// PLC alarm subscription `key`: waits up to `wait` for alarm events. The
+    /// first call (again after a reconnect) creates it and, with
+    /// `cfg.initial`, returns the active alarms first. `cfg.layout`: "auto",
+    /// "tia" or "reference". Err = not available.
+    fn alarm_poll(&self, _key: &str, _cfg: &J, _wait: Duration) -> Result<AlarmPush, String> {
+        Err("alarms need S7CommPlus".into())
+    }
+    /// Deletes the PLC alarm subscription `key` (if any).
+    fn alarm_close(&self, _key: &str) {}
 }
 
 /// Builds the device of an `open` call.
