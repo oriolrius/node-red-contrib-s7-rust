@@ -224,3 +224,19 @@ fn golden_alarm_notifications_fw4() {
     let a = decode_alarm(&n.alarm_objects[0]);
     assert!(a.cpu_alarm_id == id && a.all_states == 0x86 && a.coming.is_none() && a.going.is_some(), "going {a}");
 }
+
+/// The AckJob AcknowledgementList as PLCSIM Advanced V8 (FW S4.1) accepted
+/// it: a dynamic array (0x20) of struct 7604, the struct id once after the
+/// datatype, the count, then the members of each element up to a 0.
+#[test]
+fn ack_job_list_encoding() {
+    let o = crate::alarms::ack_job_object(0x7fff_c001, &[0x8a0e_0005_0001_0000]);
+    let v = o.attr(crate::ids::ATTR_ACK_JOB_LIST).unwrap();
+    assert_eq!(crate::textfmt::hex(&v.to_bytes()), "201700001db401bb2c000202bb2e000d8a0e00050001000000");
+    // and it decodes back to the same struct
+    let bytes = v.to_bytes();
+    let mut r = crate::wire::Reader::new(&bytes);
+    let back = crate::value::Value::decode(&mut r);
+    assert!(r.err.is_none() && r.left() == 0);
+    assert_eq!(&back, v);
+}

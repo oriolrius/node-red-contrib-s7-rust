@@ -1,18 +1,29 @@
 <script type="text/html" data-help-name="s7rs-alarms">
   <p>Sends a message when a PLC alarm comes or goes (S7CommPlus, S7-1200/1500). The PLC sends the
-    alarms: there is no polling.</p>
+    alarms: there is no polling. An input message acknowledges alarms.</p>
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>ack <span class="property-type">string | array | boolean</span></dt>
+    <dd>acknowledges alarms (the coming state): an alarm id (<code>msg.topic</code> of an alarm
+      message, <code>"0x…"</code>), a list of ids, or <code>"all"</code> / <code>true</code>: every
+      active alarm that waits for acknowledgement. <b>This writes to the PLC.</b> The result comes as
+      output messages.</dd>
+  </dl>
   <h3>Outputs</h3>
   <dl class="message-properties">
     <dt>topic <span class="property-type">string</span></dt>
     <dd>the alarm id (CPU alarm id, hex): source block RID and alarm number.</dd>
     <dt>state <span class="property-type">string</span></dt>
-    <dd><code>coming</code> (the alarm is active) or <code>going</code>.</dd>
+    <dd><code>coming</code> (the alarm is active), <code>going</code>, <code>acknowledged</code> or
+      <code>ackFailed</code> (the result of <code>msg.ack</code>; <code>payload.ackResult</code> is the
+      PLC code: the PLC refuses an alarm whose class needs no acknowledgement).</dd>
     <dt>payload <span class="property-type">object</span></dt>
     <dd>the alarm: <code>id</code>, <code>name</code>, <code>state</code>, <code>allStates</code>,
       <code>coming</code> and <code>going</code> (<code>time</code>, <code>ackTime</code>,
       <code>values</code>: the associated values as PLC bytes), <code>priority</code>,
       <code>alarmClass</code>, <code>seq</code>, <code>texts</code> (<code>lang</code>, <code>id</code>,
-      <code>text</code>).</dd>
+      <code>text</code>), <code>acknowledged</code> (false: the alarm waits for acknowledgement; always
+      true for an alarm class without acknowledgement).</dd>
     <dt class="optional">initial <span class="property-type">boolean</span></dt>
     <dd>true for the alarms that were active when the subscription started.</dd>
     <dt>ts <span class="property-type">string</span></dt>
@@ -31,5 +42,11 @@
     TIA Portal layout but sends no alarms with it). Select a layout when the automatic one gets no
     alarms.</p>
   <p>Alarm texts come from the PLC when the project has them (alarm text of the Program_Alarm
-    instance). Acknowledging alarms is not supported.</p>
+    instance).</p>
+  <h4>Acknowledgement</h4>
+  <p>Only alarms of an alarm class with acknowledgement (TIA Portal class "Acknowledgement") need it.
+    The PLC acknowledges the coming state, as the TIA Portal alarm display does. An alarm that went
+    before the acknowledgement still waits for it (the PLC keeps it in its list). The node status shows
+    the active alarms and how many alarms wait for acknowledgement. The PLC sends no new coming/going message for
+    the acknowledgement: the node sends <code>acknowledged</code> and updates its list.</p>
 </script>

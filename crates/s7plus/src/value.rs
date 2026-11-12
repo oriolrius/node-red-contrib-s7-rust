@@ -355,13 +355,27 @@ impl Value {
         if self.flags & (FLAG_ARRAY | FLAG_ADDRESS_ARRAY) != 0 {
             let empty = Vec::new();
             let a = self.v.as_array().map(|a| a as &[V]).unwrap_or(&empty);
+            if self.typ == T_STRUCT {
+                // array of structs: struct id once, count, then the members of
+                // each element (id + value) up to a 0 (checked on PLCSIM with
+                // the AckJob AcknowledgementList, flags 0x20)
+                let id = a.first().and_then(|e| e.as_struct()).map(|s| s.id).unwrap_or(0);
+                w.u32(id);
+                w.vlq32(a.len() as u32);
+                for e in a {
+                    if let Some(s) = e.as_struct() {
+                        for (id, v) in &s.elems {
+                            w.vlq32(*id);
+                            v.encode(w);
+                        }
+                    }
+                    w.byte(0);
+                }
+                return;
+            }
             w.vlq32(a.len() as u32);
             for e in a {
-                if let V::Struct(s) = e {
-                    Value::new(T_STRUCT, V::Struct(s.clone())).encode(w);
-                } else {
-                    encode_scalar(w, self.typ, e);
-                }
+                encode_scalar(w, self.typ, e);
             }
         } else if self.flags & FLAG_SPARSE_ARRAY != 0 {
             if let V::Sparse(m) = &self.v {
@@ -489,6 +503,7 @@ pub fn decode_value(r: &mut Reader) -> Value {
     let t = r.byte();
     let mut v = Value { flags, typ: t, v: V::Null };
     if flags & (FLAG_ARRAY | FLAG_ADDRESS_ARRAY) != 0 {
+        let struct_id = if t == T_STRUCT { r.u32() } else { 0 };
         let n = r.vlq32() as usize;
         if n > r.left() + 1 {
             r.fail();
@@ -498,7 +513,16 @@ pub fn decode_value(r: &mut Reader) -> Value {
         let mut i = 0;
         while i < n && r.ok() {
             if t == T_STRUCT {
-                a.push(decode_value(r).v);
+                let mut s = Struct::new(struct_id);
+                loop {
+                    let id = r.vlq32();
+                    if id == 0 || !r.ok() {
+                        break;
+                    }
+                    let e = decode_value(r);
+                    s.set(id, e);
+                }
+                a.push(V::Struct(Box::new(s)));
             } else {
                 a.push(decode_scalar(r, t));
             }

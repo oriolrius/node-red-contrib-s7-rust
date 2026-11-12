@@ -10,7 +10,7 @@ use crate::ids::*;
 use crate::object::Object;
 use crate::subscribe::{subscription_object, SubOptions, Subscription};
 use crate::textfmt::{quote, DateTime};
-use crate::value::{Value, FLAG_ADDRESS_ARRAY, FLAG_ARRAY, T_UDINT, T_UINT, V};
+use crate::value::{Struct, Value, FLAG_ADDRESS_ARRAY, FLAG_ARRAY, T_LWORD, T_STRUCT, T_UDINT, T_UINT, T_USINT, V};
 
 /// The coming or going state of an alarm (struct 3473).
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -214,6 +214,62 @@ pub(crate) fn alarm_subscription_object(o: &SubOptions, ao: &AlarmSubOptions, ri
     s
 }
 
+/// Most alarms per AckJob (TIA Portal sends at most 100 per job).
+pub const ACK_JOB_MAX: usize = 100;
+
+/// AllStatesInfo of an acknowledgement: acknowledge the coming state
+/// (bit ACK_STATE_COMING), as TIA Portal does.
+pub const ACK_COMING: u8 = 0x02;
+
+/// The AckJob object (class 3636) for a list of CPU alarm ids: User, Host
+/// and Application empty, AcknowledgementList = a dynamic array (flags 0x20)
+/// of AS_AlarmAcknfyElem structs (AllStatesInfo, CPUAlarmID), as TIA Portal
+/// sends it.
+pub(crate) fn ack_job_object(rid: u32, ids: &[u64]) -> Object {
+    let mut o = Object::new(rid, CLASS_ACK_JOB);
+    o.set_attr(ATTR_ALARMING_JOB_USER, Value::wstring(""));
+    o.set_attr(ATTR_ALARMING_JOB_HOST, Value::wstring(""));
+    o.set_attr(ATTR_ALARMING_JOB_APPLICATION, Value::wstring(""));
+    let list = ids
+        .iter()
+        .map(|id| {
+            let mut s = Struct::new(STRUCT_ALARM_ACKNFY_ELEM);
+            s.elems.push((ATTR_ACKNFY_ALL_STATES_INFO, Value::new(T_USINT, V::U8(ACK_COMING))));
+            s.elems.push((ATTR_ACKNFY_CPU_ALARM_ID, Value::new(T_LWORD, V::U64(*id))));
+            V::Struct(Box::new(s))
+        })
+        .collect();
+    o.set_attr(ATTR_ACK_JOB_LIST, Value { flags: FLAG_ADDRESS_ARRAY, typ: T_STRUCT, v: V::Array(list) });
+    o
+}
+
+/// The result of one alarm in an AckJob notification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AckResult {
+    pub cpu_alarm_id: u64,
+    /// 0 = acknowledged; PLCSIM answers 0x8005 (-32763) for an alarm whose
+    /// class needs no acknowledgement.
+    pub result: i16,
+}
+
+/// Decodes an AckJob object (class 3636) of an alarm notification: the
+/// result per alarm. None for other objects.
+pub fn decode_ack_job(o: &Object) -> Option<Vec<AckResult>> {
+    if o.class != CLASS_ACK_JOB {
+        return None;
+    }
+    let list = o.attr(ATTR_ACK_JOB_LIST).and_then(|v| v.v.as_array()).unwrap_or(&[]);
+    Some(
+        list.iter()
+            .filter_map(|e| e.as_struct())
+            .map(|s| AckResult {
+                cpu_alarm_id: s.get(ATTR_ACKNFY_CPU_ALARM_ID).and_then(|v| v.v.as_u64()).unwrap_or(0),
+                result: s.get(ATTR_ACKNFY_ACK_RESULT).and_then(|v| v.v.as_i16()).unwrap_or(-1),
+            })
+            .collect(),
+    )
+}
+
 /// The texts of one alarm in one language.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct AlarmText {
@@ -328,6 +384,25 @@ impl Client {
         let s = alarm_subscription_object(&o, ao, rid, ref_rid);
         let ids = self.create_or_cleanup(&s)?;
         Ok(self.new_subscription(ids[0], rid, o.credit_limit, 5))
+    }
+
+    /// Acknowledges alarms (the coming state) by their CPU alarm id
+    /// (`Alarm::cpu_alarm_id`): one AckJob (class 3636) per 100 alarms,
+    /// created under the alarm subsystem (8), as TIA Portal does. The PLC
+    /// reports the result through the alarm subscription (an AckJob object,
+    /// then the DAI with the acknowledged state). This WRITES to the PLC.
+    pub fn acknowledge_alarms(&self, ids: &[u64]) -> Result<()> {
+        if ids.is_empty() {
+            return Err(Error::proto("acknowledge: no alarm id"));
+        }
+        if let Some(bad) = ids.iter().find(|i| **i == 0) {
+            return Err(Error::proto(format!("acknowledge: bad alarm id {bad:#x}")));
+        }
+        for chunk in ids.chunks(ACK_JOB_MAX) {
+            let o = ack_job_object(self.next_sub_rid(), chunk);
+            self.create_object(RID_ALARM_SUBSYSTEM, &o).map_err(|(_, e)| e)?;
+        }
+        Ok(())
     }
 
     /// Reads the text library of a language (e.g. 1033 en-US), keyed like

@@ -12,13 +12,17 @@
       "reference": "S7CommPlusDriver layout (S7-1500)"
     },
     "portLabel": {
+      "in": "msg.ack: acknowledge",
       "out": "alarm events"
     },
     "status": {
-      "active": "__n__ active"
+      "active": "__n__ active",
+      "unack": "__n__ active, __u__ to acknowledge"
     },
     "errors": {
-      "subscribe": "alarm subscription: __error__"
+      "subscribe": "alarm subscription: __error__",
+      "ack": "acknowledge: __error__",
+      "noAck": "no msg.ack: set an alarm id (\"0x…\"), a list of ids, or \"all\""
     }
   }
 }

@@ -47,7 +47,7 @@ pub mod fake;
 #[cfg(test)]
 mod tests;
 
-pub use alarms::{decode_alarm, parse_text_library, Alarm, AlarmCgs, AlarmSubOptions, AlarmText, HmiInfo};
+pub use alarms::{decode_ack_job, decode_alarm, parse_text_library, AckResult, Alarm, AlarmCgs, AlarmSubOptions, AlarmText, HmiInfo};
 pub use blob::{Comments, Dictionaries};
 pub use browse::{DbInfo, VarInfo};
 pub use client::{Client, Options, SessionEcho, SessionInfo, TraceFn};

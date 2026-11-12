@@ -83,7 +83,7 @@ Then restart Node-RED. The nodes are in the **network** category of the palette.
 | `s7 read` | Reads tags when a message arrives. Output: one value, `{tag: value}` or an array. |
 | `s7 write` | Writes the tag of the node, the tag in `msg.topic`, or `msg.payload = {tag: value, …}` in one request. |
 | `s7 watch` | Sends only the changes. Mode "read cyclically": a Rust thread reads the tags at an interval, with an optional conditional rate ("Fast while" a tag is true). Mode "PLC subscription" (S7CommPlus): the PLC sends the changes. |
-| `s7 alarms` | S7CommPlus: a message when a PLC alarm comes or goes (alarm subscription; the active alarms at start). |
+| `s7 alarms` | S7CommPlus: a message when a PLC alarm comes or goes (alarm subscription; the active alarms at start). `msg.ack` acknowledges alarms. |
 | `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `certificate`, `dbs`, `browse`, `alarms`, `limits`. |
 
 Every node has full help in the editor sidebar. Bad tags never stop the other tags: they give
@@ -152,6 +152,7 @@ This map shows each protocol function and where it is available. It is strict: a
 | Communication limits | read of the PLC limit attributes | ✅ | `s7 info`: `limits`, `info` |
 | Active alarms | alarm objects and text libraries | ✅ | `s7 info`: `alarms` |
 | Alarm subscription | CreateObject alarm subscription (TIA Portal or S7CommPlusDriver layout), DAI notifications | ✅ | `s7 alarms` |
+| Alarm acknowledgement | CreateObject AckJob (class 3636) under the alarm subsystem, AcknowledgementList (dynamic array of struct 7604); the result comes back as an AckJob notification | ✅ | `s7 alarms` (`msg.ack`), `s7 info`: `acknowledge` |
 | Variable subscription | CreateObject subscription with a cycle time, notifications, credit limit | ✅ | `s7 watch` (mode "PLC subscription") |
 | Set CPU operating state (RUN/STOP) | SetVariable 0x04F2 | 🔒 | — |
 | Block upload / download, program changes | BeginSequence 0x0556, EndSequence 0x0560, Invoke 0x056B | ❌ | — |
@@ -256,6 +257,8 @@ All examples use the address `192.168.0.1`. Change it in the endpoint.
 - The nodes **cannot** stop or start the CPU and **cannot** upload blocks. The Rust crates have
   these functions, but the addon does not expose them.
 - `setClock` and `syncClock` change the PLC clock. The admin API refuses them.
+- `s7 alarms` acknowledges alarms when a message with `msg.ack` arrives (a write to the PLC), never
+  by itself. `s7 info` action `acknowledge` does the same; the admin API refuses it.
 - `s7 write` writes to the PLC at once. Test on a simulator (for example PLCSIM Advanced) before
   you write to a machine.
 

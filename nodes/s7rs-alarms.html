@@ -8,12 +8,15 @@
       initial: { value: true },
       layout: { value: 'auto' },
     },
-    inputs: 0,
+    inputs: 1,
     outputs: 1,
     icon: 'font-awesome/fa-bell',
     paletteLabel: 's7 alarms',
     label: function () {
       return this.name || 's7 alarms';
+    },
+    inputLabels: function () {
+      return this._('s7rs-alarms.portLabel.in');
     },
     outputLabels: function () {
       return this._('s7rs-alarms.portLabel.out');

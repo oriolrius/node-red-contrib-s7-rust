@@ -699,3 +699,30 @@ fn certificate_signed_by_project_ca_fake() {
     let e = refused(tls_dial(&f, CertVerify::trusted_pem(&ca_pem).unwrap(), "plc.local"), "accepted").to_string();
     assert!(e.contains("not valid for this name"), "unexpected certificate error");
 }
+
+#[test]
+fn alarm_acknowledge_fake() {
+    let f = FakePlc::start().unwrap();
+    let c = dial(&f, Options::default());
+    let mut sub = c.subscribe_alarms(&AlarmSubOptions::for_plc(&c.info().paom())).unwrap();
+    let (need, no_need) = (0x8a0e_0005_0001_0000u64, 0x8a0e_0005_0002_0000u64);
+    f.raise_alarm_ack(need, true, vec![], true);
+    f.raise_alarm_ack(no_need, true, vec![], false);
+    let mut seen = 0;
+    while seen < 2 {
+        let n = sub.next(&c, Duration::from_secs(2)).unwrap();
+        seen += n.alarm_objects.iter().filter(|o| o.class == CLASS_DAI).count();
+    }
+    let states = |id: u64| c.active_alarms(false).unwrap().iter().find(|a| a.cpu_alarm_id == id).map(|a| a.all_states);
+    assert_eq!(states(need), Some(0x85), "waits for acknowledgement");
+    c.acknowledge_alarms(&[need, no_need]).unwrap();
+    let n = sub.next(&c, Duration::from_secs(2)).unwrap();
+    let res = n.alarm_objects.iter().find_map(crate::decode_ack_job).expect("AckJob in the notification");
+    assert_eq!(
+        res,
+        vec![crate::AckResult { cpu_alarm_id: need, result: 0 }, crate::AckResult { cpu_alarm_id: no_need, result: 0x8005u16 as i16 }]
+    );
+    assert_eq!(states(need), Some(0x87), "acknowledged");
+    assert!(crate::decode_ack_job(&crate::object::Object::new(1, CLASS_DAI)).is_none());
+    assert!(c.acknowledge_alarms(&[]).is_err() && c.acknowledge_alarms(&[0]).is_err());
+}

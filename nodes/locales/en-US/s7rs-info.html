@@ -37,6 +37,9 @@
         (then <code>error</code> has the reason)</li>
     <li><code>dbs</code>: data blocks; <code>browse</code>: all symbols with their types</li>
     <li><code>alarms {all}</code>: active alarms; <code>limits</code>: system limits</li>
+      <li><code>acknowledge {ids, all}</code>: acknowledges alarms (ids <code>"0x…"</code>, or
+        <code>all: true</code> for every alarm that waits). <b>Writes to the PLC.</b> Returns
+        <code>sent</code>; the result comes through <code>s7 alarms</code>.</li>
   </ul>
   <p><code>setClock</code> and <code>syncClock</code> change the PLC clock. STOP/START of the CPU and
     block upload are not available.</p>

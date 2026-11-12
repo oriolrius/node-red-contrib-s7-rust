@@ -107,6 +107,10 @@ pub struct FakeModel {
     /// S7-1500 FW V4.x (PLCSIM S4.1): an alarm subscription without the
     /// S7CommPlusDriver attributes (TIA Portal layout) gets no notifications.
     pub alarm_needs_reference: bool,
+    /// CPU alarm ids of an alarm class with acknowledgement (see
+    /// [`FakePlc::raise_alarm_ack`]): an AckJob for an alarm that is already
+    /// acknowledged answers 0 for them, 0x8005 for the others.
+    pub ack_required: std::collections::HashSet<u64>,
 }
 
 struct FakeSub {
@@ -224,11 +228,36 @@ impl FakePlc {
     /// every alarm subscription gets a DAI with the new state (all states
     /// 0x87 coming / 0x86 going, like PLCSIM) and the associated values.
     pub fn raise_alarm(&self, cpu_alarm_id: u64, coming: bool, assoc: Vec<Vec<u8>>) {
+        self.raise_alarm_ack(cpu_alarm_id, coming, assoc, false)
+    }
+
+    /// Like [`FakePlc::raise_alarm`]; `ack_required`: an alarm class with
+    /// acknowledgement (coming 0x85 until an AckJob acknowledges it, like
+    /// PLCSIM with the class "Acknowledgement").
+    pub fn raise_alarm_ack(&self, cpu_alarm_id: u64, coming: bool, assoc: Vec<Vec<u8>>, ack_required: bool) {
         let mut st = self.lock();
         let md = &mut st.model;
+        if ack_required {
+            md.ack_required.insert(cpu_alarm_id);
+        } else {
+            md.ack_required.remove(&cpu_alarm_id);
+        }
         let mut d = md.dais.first().cloned().unwrap_or_else(|| Object::new(0x1000_0006, CLASS_DAI));
         d.set_attr(ATTR_DAI_CPU_ALARM_ID, Value::new(T_LWORD, V::U64(cpu_alarm_id)));
-        let states = if coming { 0x87 } else { 0x86 };
+        // an alarm that needs acknowledgement and goes before it: 0x84, it stays
+        // in the active list until it is acknowledged (PLCSIM)
+        let acked = md
+            .dais
+            .iter()
+            .find(|x| x.attr(ATTR_DAI_CPU_ALARM_ID).and_then(|v| v.v.as_u64()) == Some(cpu_alarm_id))
+            .and_then(|x| x.attr(ATTR_DAI_ALL_STATES_INFO).and_then(|v| v.v.as_u8()))
+            .is_some_and(|s| s & 2 != 0);
+        let states = match (coming, ack_required) {
+            (true, false) => 0x87,
+            (true, true) => 0x85,
+            (false, true) if !acked => 0x84,
+            (false, _) => 0x86,
+        };
         d.set_attr(ATTR_DAI_ALL_STATES_INFO, Value::usint(states));
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |t| t.as_nanos() as u64);
         let mut cgs = Struct::new(3473);
@@ -243,6 +272,7 @@ impl FakePlc {
         match (coming, known) {
             (true, Some(i)) => md.dais[i] = d.clone(),
             (true, None) => md.dais.push(d.clone()),
+            (false, Some(i)) if states == 0x84 => md.dais[i] = d.clone(),
             (false, Some(i)) => {
                 md.dais.remove(i);
             }
@@ -468,6 +498,9 @@ impl Fake {
                     o.encode(&mut w);
                     w.u32(0);
                     return self.reply(ver, m, &w.b);
+                }
+                if req_id == RID_ALARM_SUBSYSTEM {
+                    return self.ack_job(ver, m, obj);
                 }
                 self.create_subscription(ver, m, obj)
             }
@@ -797,6 +830,79 @@ impl Fake {
         }
         let mut w = Writer::new();
         w.vlq64(rv);
+        w.u32(0);
+        self.reply(ver, m, &w.b)
+    }
+
+    /// Answers a CreateObject of an AckJob (class 3636) under the alarm
+    /// subsystem: acknowledges the coming state of the listed alarms that need
+    /// it (result 0; 0x8005 for others, like PLCSIM) and sends the AckJob with
+    /// the results to the alarm subscriptions.
+    fn ack_job(&self, ver: u8, m: &Message, obj: Option<Object>) -> bool {
+        let mut w = Writer::new();
+        let list = obj
+            .as_ref()
+            .filter(|o| o.class == CLASS_ACK_JOB)
+            .and_then(|o| o.attr(ATTR_ACK_JOB_LIST))
+            .and_then(|v| v.v.as_array())
+            .map(|a| a.to_vec());
+        let Some(list) = list else {
+            w.vlq64(0xa202_8900_05dd_fffe); // what PLCSIM answers to a bad AcknowledgementList
+            w.byte(0);
+            w.u32(0);
+            return self.reply(ver, m, &w.b);
+        };
+        let mut st = self.st();
+        let md = &mut st.model;
+        md.next_obj += 1;
+        let id = 0x7200_7000 + md.next_obj;
+        let mut out = Vec::new();
+        let mut gone = Vec::new();
+        for e in list.iter().filter_map(|e| e.as_struct()) {
+            let alarm = e.get(ATTR_ACKNFY_CPU_ALARM_ID).and_then(|v| v.v.as_u64()).unwrap_or(0);
+            let want = e.get(ATTR_ACKNFY_ALL_STATES_INFO).and_then(|v| v.v.as_u8()).unwrap_or(0);
+            let dai = md.dais.iter_mut().find(|d| d.attr(ATTR_DAI_CPU_ALARM_ID).and_then(|v| v.v.as_u64()) == Some(alarm));
+            // waiting (bit 1 clear): acknowledged; already acknowledged: 0 for
+            // a class with acknowledgement, 0x8005 for a class without (PLCSIM)
+            let result: i16 = match dai {
+                Some(d) => {
+                    let s = d.attr(ATTR_DAI_ALL_STATES_INFO).and_then(|v| v.v.as_u8()).unwrap_or(0);
+                    if s & 2 == 0 {
+                        d.set_attr(ATTR_DAI_ALL_STATES_INFO, Value::usint(s | want));
+                        if s & 1 == 0 {
+                            gone.push(alarm); // went before: out of the active list now
+                        }
+                        0
+                    } else if md.ack_required.contains(&alarm) {
+                        0
+                    } else {
+                        0x8005u16 as i16
+                    }
+                }
+                None => 0x8005u16 as i16,
+            };
+            let mut r = Struct::new(STRUCT_ALARM_ACKNFY_ELEM);
+            r.set(ATTR_ACKNFY_CPU_ALARM_ID, Value::new(T_LWORD, V::U64(alarm)));
+            r.set(ATTR_ACKNFY_ALL_STATES_INFO, Value::usint(if result == 0 { want } else { 0 }));
+            r.set(ATTR_ACKNFY_ACK_RESULT, Value::int(result));
+            out.push(V::Struct(Box::new(r)));
+        }
+        md.dais.retain(|d| !gone.contains(&d.attr(ATTR_DAI_CPU_ALARM_ID).and_then(|v| v.v.as_u64()).unwrap_or(0)));
+        let mut job = Object::new(id, CLASS_ACK_JOB);
+        job.set_attr(ATTR_OBJECT_VARIABLE_TYPE_NAME, Value::wstring(format!("AckJob_{:02}", id & 0xff)));
+        job.set_attr(ATTR_ALARMING_JOB_STATE, Value::dint(2));
+        job.set_attr(ATTR_ALARMING_JOB_TIMESTAMP, Value::timestamp(1_800_000_000_000_000_000));
+        job.set_attr(ATTR_ACK_JOB_LIST, Value { flags: FLAG_ADDRESS_ARRAY, typ: T_STRUCT, v: V::Array(out) });
+        for s in md.subs.values_mut() {
+            if let Some((_, q)) = s.alarm.as_mut() {
+                q.push(job.clone());
+                let _ = s.trigger.try_send(());
+            }
+        }
+        drop(st);
+        w.vlq64(0);
+        w.byte(1);
+        w.vlq32(id);
         w.u32(0);
         self.reply(ver, m, &w.b)
     }
@@ -1213,6 +1319,7 @@ impl FakeModel {
             explores: Vec::new(),
             sub_needs_cycle: false,
             alarm_needs_reference: false,
+            ack_required: Default::default(),
         };
         md.types.insert(TI_DB1, type_obj(TI_DB1, true, 220, &db1_vars()));
         md.types.insert(TI_DB2, type_obj(TI_DB2, false, 4, &db2_vars()));

@@ -358,10 +358,41 @@ pub fn alarm_json(x: &s7plus::Alarm) -> J {
     json!({
         "name": x.name, "id": format!("0x{:016x}", x.cpu_alarm_id), "allStates": x.all_states,
         "state": if x.all_states & 1 != 0 { "coming" } else { "going" },
+        // AllStatesInfo bit 1: the coming state is acknowledged (always set for
+        // an alarm class without acknowledgement)
+        "acknowledged": x.all_states & 2 != 0,
         "messageType": x.message_type, "seq": x.seq_counter, "coming": cgs(&x.coming), "going": cgs(&x.going),
         "priority": x.hmi.map(|h| h.priority), "alarmClass": x.hmi.map(|h| h.alarm_class),
         "texts": texts.iter().map(|(k, v)| json!({"lang": k >> 16, "id": k & 0xffff, "text": v})).collect::<Vec<_>>(),
     })
+}
+
+/// One result of an AckJob notification.
+fn ack_json(r: &s7plus::AckResult) -> J {
+    json!({
+        "id": format!("0x{:016x}", r.cpu_alarm_id),
+        "state": if r.result == 0 { "acknowledged" } else { "ackFailed" },
+        "ackResult": r.result,
+    })
+}
+
+/// Alarm ids from `ids`: "0x…" hex strings or numbers.
+fn alarm_ids(v: Option<&J>) -> Result<Vec<u64>, String> {
+    let one = |x: &J| -> Result<u64, String> {
+        match x {
+            J::String(s) => {
+                let h = s.trim().trim_start_matches("0x").trim_start_matches("0X");
+                u64::from_str_radix(h, 16).map_err(|_| format!("alarm id {s:?}: use the id of the alarm message (\"0x…\")"))
+            }
+            J::Number(n) => n.as_u64().ok_or_else(|| format!("alarm id {n}: not a positive integer")),
+            o => Err(format!("alarm id {o}: use a \"0x…\" string")),
+        }
+    };
+    match v {
+        Some(J::Array(a)) => a.iter().map(one).collect(),
+        Some(x) => Ok(vec![one(x)?]),
+        None => Ok(Vec::new()),
+    }
 }
 
 /// The address of a resolved tag.
@@ -544,7 +575,8 @@ impl Device for PlusDev {
         }
     }
 
-    /// Actions: status, info, certificate, cpuState, limits, dbs, browse, alarms {all}.
+    /// Actions: status, info, certificate, cpuState, limits, dbs, browse, alarms {all},
+    /// acknowledge {ids, all} (writes).
     /// RUN/STOP is not exposed.
     fn call(&self, action: &str, a: &J) -> Result<J, String> {
         let e = |e: PErr| e.to_string();
@@ -568,6 +600,21 @@ impl Device for PlusDev {
                     "session": i.session, "limits": limits_json(&l), "certificateCheck": self.cfg.verify.mode(),
                     "certificateFingerprint": i.peer_cert.as_deref().map(|d| s7plus::fingerprint_text(&s7plus::fingerprint(d))),
                 })
+            }
+            // WRITES to the PLC: acknowledges alarms ({ids} or {all: true}: every
+            // alarm that waits for acknowledgement, also one that went already)
+            "acknowledge" => {
+                let mut ids = alarm_ids(a.get("ids"))?;
+                if a.get("all").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    let l = self.run(|c| c.active_alarms(false)).map_err(e)?;
+                    ids.extend(l.iter().filter(|x| x.all_states & 2 == 0).map(|x| x.cpu_alarm_id));
+                }
+                ids.sort_unstable();
+                ids.dedup();
+                if !ids.is_empty() {
+                    self.run(|c| c.acknowledge_alarms(&ids)).map_err(e)?;
+                }
+                json!({"sent": ids.iter().map(|i| format!("0x{i:016x}")).collect::<Vec<_>>()})
             }
             "certificate" => {
                 let c = match self.client() {
@@ -620,7 +667,11 @@ impl Device for PlusDev {
                 let l = self.run(|c| c.active_alarms(all)).map_err(e)?;
                 J::Array(l.iter().map(alarm_json).collect())
             }
-            x => return Err(format!("unknown action {x:?} for s7plus (status, info, certificate, cpuState, limits, dbs, browse, alarms)")),
+            x => {
+                return Err(format!(
+                    "unknown action {x:?} for s7plus (status, info, certificate, cpuState, limits, dbs, browse, alarms, acknowledge)"
+                ))
+            }
         })
     }
 
@@ -680,7 +731,16 @@ impl Device for PlusDev {
         }
         let (_, sub) = map.get_mut(key).expect("alarm subscription");
         match sub.next(&c, wait) {
-            Ok(n) => out.extend(n.alarm_objects.iter().map(|o| alarm_json(&s7plus::decode_alarm(o)))),
+            Ok(n) => {
+                for o in &n.alarm_objects {
+                    match s7plus::decode_ack_job(o) {
+                        // the result of an acknowledgement (one event per alarm)
+                        Some(res) => out.extend(res.iter().map(ack_json)),
+                        None if o.class == s7plus::ids::CLASS_DAI => out.push(alarm_json(&s7plus::decode_alarm(o))),
+                        None => {}
+                    }
+                }
+            }
             Err(e) if e.is_timeout() => {}
             Err(e) if transport(&e) => {
                 map.remove(key);

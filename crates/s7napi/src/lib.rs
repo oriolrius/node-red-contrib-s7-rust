@@ -828,13 +828,14 @@ mod fakes {
     }
 
     /// Raises (coming) or clears (going) an alarm on the fake S7CommPlus PLC at
-    /// `addr`: id as hex text, associated values as byte arrays.
+    /// `addr`: id as hex text, associated values as byte arrays; `ack_required`:
+    /// an alarm class with acknowledgement.
     #[napi]
-    pub fn fake_s7plus_raise_alarm(addr: String, id: String, coming: bool, values: Option<Vec<Vec<u8>>>) {
+    pub fn fake_s7plus_raise_alarm(addr: String, id: String, coming: bool, values: Option<Vec<Vec<u8>>>, ack_required: Option<bool>) {
         let id = u64::from_str_radix(id.trim_start_matches("0x"), 16).unwrap_or(0);
         let keep = KEEP.lock().unwrap();
         if let Some(f) = keep.iter().filter_map(|b| b.downcast_ref::<s7plus::fake::FakePlc>()).find(|f| f.addr() == addr) {
-            f.raise_alarm(id, coming, values.unwrap_or_default());
+            f.raise_alarm_ack(id, coming, values.unwrap_or_default(), ack_required.unwrap_or(false));
         }
     }
 
