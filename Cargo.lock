@@ -659,7 +659,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "s7"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "s7",
@@ -668,7 +668,7 @@ dependencies = [
 
 [[package]]
 name = "s7napi"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "chrono",
  "napi",
@@ -681,7 +681,7 @@ dependencies = [
 
 [[package]]
 name = "s7plus"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "aes",
  "flate2",
