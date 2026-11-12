@@ -13,6 +13,12 @@ All notable changes to this project are documented here. The format follows
   integrity id, the Explore request now ends with one more 0 byte after the fill, like
   S7CommPlusDriver. Symbolic reads such as `"DB".member` work over TLS now. The fake PLC
   refuses the old request in TLS sessions, and the TLS test explores the DB list.
+- S7CommPlus: a PLC that refuses a session without TLS (PLCSIM Advanced V8 with FW S4.1, or
+  "Only allow secure PG/PC and HMI communication") gave "CreateObject returned no session id".
+  The session setup now detects the negative return value (`0xa201d6000214fdf8`) and, when
+  the PLC supports TLS, says: "the PLC refused the session without TLS … enable TLS on the
+  endpoint" (#11). The fake PLC models this PLC, and goes on in plain text when a client
+  skips TLS after InitSsl.
 
 ## [1.0.4] - 2026-11-08
 

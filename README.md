@@ -172,6 +172,9 @@ This map shows each protocol function and where it is available. It is strict: a
 
 **S7CommPlus (S7-1200/1500)**: no PUT/GET, optimized DBs are fine. Use symbols. If the CPU has an
 access level password, set it in the endpoint. TLS needs S7-1500 FW ≥ 2.9 or S7-1200 FW ≥ 4.5.
+Some CPUs accept only TLS sessions (PLCSIM Advanced V8 with FW S4.1, or a CPU with "Only allow
+secure PG/PC and HMI communication"): without TLS the connection fails with "the PLC refused the
+session without TLS". Turn on TLS in the endpoint.
 
 ## Addresses
 

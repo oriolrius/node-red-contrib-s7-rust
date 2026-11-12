@@ -230,6 +230,18 @@ impl Link {
         Ok(())
     }
 
+    /// Fake PLC: true when the next COTP DT frame starts a TLS record (0x16).
+    /// The frame stays in the read buffer for the next read.
+    #[cfg(feature = "fake")]
+    pub fn next_is_tls(&mut self) -> Result<bool> {
+        let b = self.tp.read_tpkt()?;
+        let tls = b.len() > 3 && b[1] == 0xf0 && b[3] == 0x16;
+        let mut raw = tpkt(&b);
+        raw.extend_from_slice(&self.tp.rbuf);
+        self.tp.rbuf = raw;
+        Ok(tls)
+    }
+
     /// TLS exporter (RFC 8446 §7.5) with an empty context.
     pub fn export_keying_material(&self, label: &[u8], n: usize) -> Option<Vec<u8>> {
         let st = self.tls.as_ref()?;

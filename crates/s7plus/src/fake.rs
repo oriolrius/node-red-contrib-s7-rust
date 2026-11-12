@@ -42,6 +42,8 @@ use crate::{DateTime, Message};
 pub const ERR_ADDR: u64 = 0x8020_ab00_1bc8_fff4;
 /// Explore refused by PLCSIM (FW S4.1) when a TLS request lacks the last 0 byte.
 pub const ERR_EXPLORE_TRAILER: u64 = 0xa201_be00_017e_ff79;
+/// Session CreateObject refused without TLS (PLCSIM Advanced V8, FW S4.1).
+pub const ERR_SESSION_NEEDS_TLS: u64 = 0xa201_d600_0214_fdf8;
 
 /// Type-info RIDs of the fake's data blocks.
 pub const TI_DB1: u32 = 0x9100_0001;
@@ -61,6 +63,8 @@ pub struct FakeState {
     pub tls: Option<Arc<rustls::ServerConfig>>,
     /// The PAOM string sent in ServerSessionVersion 319.
     pub paom: String,
+    /// Refuse a session without TLS, like PLCSIM Advanced V8 (FW S4.1).
+    pub require_tls: bool,
     pub model: FakeModel,
 }
 
@@ -127,6 +131,7 @@ impl FakePlc {
             echo: None,
             tls: None,
             paom: "1;6ES7 212-1BE31-0XB0 ;V3.0".into(),
+            require_tls: false,
             model: FakeModel::new(),
         }));
         let stop = Arc::new(AtomicBool::new(false));
@@ -297,7 +302,12 @@ impl Fake {
                     let Ok(sc) = rustls::ServerConnection::new(cfg) else { return false };
                     let mut l = lock(&self.link);
                     l.set_deadline(Some(Instant::now() + Duration::from_secs(5)));
-                    return l.start_tls(rustls::Connection::Server(sc)).is_ok();
+                    // Like PLCSIM: a client may skip TLS after InitSsl and go on in plain text.
+                    match l.next_is_tls() {
+                        Ok(true) => return l.start_tls(rustls::Connection::Server(sc)).is_ok(),
+                        Ok(false) => return true,
+                        Err(_) => return false,
+                    }
                 }
                 // The FW V3 PLC answers with function Error2 and a negative return.
                 w.vlq64(0xa201_9a00_0145_ff89);
@@ -310,6 +320,13 @@ impl Fake {
                 r.u32();
                 let obj = decode_object(&mut r);
                 if req_id == OBJ_SERVER_SESS_CONT {
+                    if self.st().require_tls && !lock(&self.link).is_tls() {
+                        // PLCSIM Advanced V8 (FW S4.1): negative return, no ids
+                        w.vlq64(ERR_SESSION_NEEDS_TLS);
+                        w.byte(0);
+                        w.u32(0);
+                        return self.reply(ver, m, &w.b);
+                    }
                     w.vlq64(0);
                     w.byte(2);
                     w.vlq32(0x39c);
