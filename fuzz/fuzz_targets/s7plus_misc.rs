@@ -1,4 +1,4 @@
-//! S7CommPlus: notifications, alarm info, text libraries, access strings, comment blobs.
+//! S7CommPlus: notifications, alarm info, text libraries, access strings, comment blobs, X.509.
 #![no_main]
 use libfuzzer_sys::fuzz_target;
 use s7plus::{decode_notification, parse_text_library, Dictionaries, ItemAddress};
@@ -8,6 +8,10 @@ fuzz_target!(|data: &[u8]| {
     let _ = s7plus::alarms::decode_hmi_info(data);
     let _ = ItemAddress::parse_access_string(&String::from_utf8_lossy(data));
     let _ = Dictionaries::new().decompress_blob(data, 0);
+    // the PLC certificate (read before it is verified) and the endpoint settings
+    let _ = s7plus::x509::parse(data);
+    let _ = s7plus::CertVerify::fingerprints(&String::from_utf8_lossy(data));
+    let _ = s7plus::CertVerify::trusted_pem(&String::from_utf8_lossy(data));
     // four parts: <len8> each for the first three, the rest is the string table
     let mut parts = Vec::new();
     let mut rest = data;

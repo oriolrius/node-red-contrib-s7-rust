@@ -31,6 +31,9 @@ pub enum Error {
     BitWrite,
     /// TLS error.
     Tls(String),
+    /// The PLC certificate failed the check of [`crate::CertVerify`], or the
+    /// check settings are wrong. A reconnect does not help.
+    Certificate(String),
 }
 
 impl Error {
@@ -71,6 +74,7 @@ impl fmt::Display for Error {
             Error::NotFound(s) => write!(f, "s7plus: symbol not found: {s}"),
             Error::BitWrite => write!(f, "s7plus: bit writes are not supported by byte-area access"),
             Error::Tls(s) => write!(f, "s7plus: TLS: {s}"),
+            Error::Certificate(s) => write!(f, "s7plus: TLS: {s}"),
         }
     }
 }

@@ -9,7 +9,7 @@ const { text, intOrUndef } = require('../lib/common');
 // Diagnostics the editor may call through the admin API (read-only actions).
 const ADMIN_ACTIONS = new Set([
   'identify', 'cpuState', 'szl', 'szlList', 'clock', 'blocks', 'listBlocks', 'blockInfo',
-  'info', 'limits', 'dbs', 'browse', 'alarms',
+  'info', 'certificate', 'limits', 'dbs', 'browse', 'alarms',
 ]);
 
 module.exports = function (RED) {
@@ -46,6 +46,10 @@ module.exports = function (RED) {
       logLevel: config.logLevel || 'warn',
       tsap: config.tsap || '',
       tls: config.tls === true || config.tls === 'true',
+      certVerify: config.certVerify || 'none',
+      certFingerprint: config.certFingerprint || '',
+      certTrusted: config.certTrusted || '',
+      certName: String(config.certName || '').trim(),
       username: config.username || '',
       password: creds.password || '',
       host: String(config.host || '').trim(),

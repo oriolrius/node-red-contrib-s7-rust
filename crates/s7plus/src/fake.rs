@@ -61,6 +61,10 @@ pub struct FakeState {
     pub echo: Option<Struct>,
     /// TLS server configuration (see [`FakePlc::enable_tls`]).
     pub tls: Option<Arc<rustls::ServerConfig>>,
+    /// The TLS certificate (DER) of the fake, and the CA that signed it
+    /// (see [`FakePlc::enable_tls_signed`]).
+    pub tls_cert: Option<Vec<u8>>,
+    pub tls_ca: Option<Vec<u8>>,
     /// The PAOM string sent in ServerSessionVersion 319.
     pub paom: String,
     /// The open client connections (see [`FakePlc::drop_connections`]).
@@ -143,6 +147,8 @@ impl FakePlc {
             mem,
             echo: None,
             tls: None,
+            tls_cert: None,
+            tls_ca: None,
             paom: "1;6ES7 212-1BE31-0XB0 ;V3.0".into(),
             conns: Vec::new(),
             require_tls: false,
@@ -184,9 +190,29 @@ impl FakePlc {
 
     /// Answers InitSsl and runs TLS 1.3 with a fresh self-signed certificate.
     pub fn enable_tls(&self) -> io::Result<()> {
-        let cfg = self_signed().map_err(io::Error::other)?;
-        self.lock().tls = Some(cfg);
+        let (cfg, cert) = self_signed(&["fake-plc".to_string(), "127.0.0.1".to_string()]).map_err(io::Error::other)?;
+        let mut st = self.lock();
+        st.tls = Some(cfg);
+        st.tls_cert = Some(cert);
+        st.tls_ca = None;
         Ok(())
+    }
+
+    /// TLS 1.3 with a certificate for `names` (DNS names or IP addresses)
+    /// signed by a fresh CA, like a PLC certificate of a TIA Portal project
+    /// CA. Returns the CA certificate (DER).
+    pub fn enable_tls_signed(&self, names: &[&str]) -> io::Result<Vec<u8>> {
+        let (cfg, cert, ca) = ca_signed(names).map_err(io::Error::other)?;
+        let mut st = self.lock();
+        st.tls = Some(cfg);
+        st.tls_cert = Some(cert);
+        st.tls_ca = Some(ca.clone());
+        Ok(ca)
+    }
+
+    /// The TLS certificate (DER) of the fake.
+    pub fn tls_cert(&self) -> Option<Vec<u8>> {
+        self.lock().tls_cert.clone()
     }
 
     /// Number of live subscriptions.
@@ -252,10 +278,8 @@ impl Drop for FakePlc {
     }
 }
 
-fn self_signed() -> Result<Arc<rustls::ServerConfig>, String> {
-    let ck = rcgen::generate_simple_self_signed(vec!["fake-plc".to_string()]).map_err(|e| e.to_string())?;
-    let cert = ck.cert.der().clone();
-    let key = rustls::pki_types::PrivateKeyDer::Pkcs8(ck.signing_key.serialize_der().into());
+fn server_config(cert: rustls::pki_types::CertificateDer<'static>, key: &rcgen::KeyPair) -> Result<Arc<rustls::ServerConfig>, String> {
+    let key = rustls::pki_types::PrivateKeyDer::Pkcs8(key.serialize_der().into());
     let cfg = rustls::ServerConfig::builder_with_provider(crate::tls::provider())
         .with_protocol_versions(&[&rustls::version::TLS13])
         .map_err(|e| e.to_string())?
@@ -263,6 +287,40 @@ fn self_signed() -> Result<Arc<rustls::ServerConfig>, String> {
         .with_single_cert(vec![cert], key)
         .map_err(|e| e.to_string())?;
     Ok(Arc::new(cfg))
+}
+
+/// A self-signed certificate like the one of a PLC without a project CA
+/// (subject = issuer, CA:FALSE).
+fn self_signed(names: &[String]) -> Result<(Arc<rustls::ServerConfig>, Vec<u8>), String> {
+    let mut p = rcgen::CertificateParams::new(names.to_vec()).map_err(|e| e.to_string())?;
+    p.distinguished_name.push(rcgen::DnType::CommonName, "PLC-1/Communication-1");
+    p.distinguished_name.push(rcgen::DnType::OrganizationName, "Fake");
+    p.is_ca = rcgen::IsCa::ExplicitNoCa;
+    let key = rcgen::KeyPair::generate().map_err(|e| e.to_string())?;
+    let cert = p.self_signed(&key).map_err(|e| e.to_string())?;
+    let der = cert.der().to_vec();
+    Ok((server_config(cert.der().clone(), &key)?, der))
+}
+
+/// Server configuration, certificate (DER), CA certificate (DER).
+type SignedTls = (Arc<rustls::ServerConfig>, Vec<u8>, Vec<u8>);
+
+fn ca_signed(names: &[&str]) -> Result<SignedTls, String> {
+    let mut cp = rcgen::CertificateParams::new(Vec::<String>::new()).map_err(|e| e.to_string())?;
+    cp.distinguished_name.push(rcgen::DnType::CommonName, "Fake project CA");
+    cp.is_ca = rcgen::IsCa::Ca(rcgen::BasicConstraints::Unconstrained);
+    cp.key_usages = vec![rcgen::KeyUsagePurpose::KeyCertSign, rcgen::KeyUsagePurpose::DigitalSignature];
+    let ca_key = rcgen::KeyPair::generate().map_err(|e| e.to_string())?;
+    let ca = cp.self_signed(&ca_key).map_err(|e| e.to_string())?;
+    let ca_der = ca.der().to_vec();
+    let issuer = rcgen::Issuer::new(cp, ca_key);
+    let mut p = rcgen::CertificateParams::new(names.iter().map(|s| s.to_string()).collect::<Vec<_>>()).map_err(|e| e.to_string())?;
+    p.distinguished_name.push(rcgen::DnType::CommonName, "PLC-1/Communication-1");
+    p.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ServerAuth];
+    let key = rcgen::KeyPair::generate().map_err(|e| e.to_string())?;
+    let cert = p.signed_by(&key, &issuer).map_err(|e| e.to_string())?;
+    let der = cert.der().to_vec();
+    Ok((server_config(cert.der().clone(), &key)?, der, ca_der))
 }
 
 fn serve(state: Arc<Mutex<FakeState>>, stop: Arc<AtomicBool>, tcp: TcpStream) {

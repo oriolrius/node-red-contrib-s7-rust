@@ -61,7 +61,9 @@ address (default 192.168.0.1).
 |---|---|
 | `node test/plcsim/live_watch.js [push\|poll]` | `s7 watch` on `TestSub` and `TestOpt.sText` (interval 100 ms), writes `sp = 1001` and a String with `s7 write`, prints the messages |
 | `node test/plcsim/live_alarms.js [auto\|tia\|reference]` | `s7 alarms`, writes `alarmReq = true` / `false` with `s7 write`, prints the alarm events and the node status |
+| `node test/plcsim/live_cert.js` | reads the PLC certificate (`s7 info` `certificate`), then connects with a pinned fingerprint, with the certificate as trusted certificate, with a wrong fingerprint and with a wrong certificate name; prints the state of each and `RESULT ok` |
 
 Expected: push mode sends all tags first, then `tick` / `rSine` every 100 ms and the writes about
 100 ms later; `alReq` comes about 20 ms after the write of `alarmReq = true` with the value
-`[4, 210]` (1234) and goes after `false`; `alAuto` comes and goes every 5 s.
+`[4, 210]` (1234) and goes after `false`; `alAuto` comes and goes every 5 s. The PLC certificate
+of PLCSIM is self-signed (CN `PLC-1/Communication-1`, `IP:192.168.0.1`).

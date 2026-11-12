@@ -21,6 +21,10 @@
       logLevel: { value: 'warn' },
       tsap: { value: 'SIMATIC-ROOT-HMI' },
       tls: { value: false },
+      certVerify: { value: 'none' },
+      certFingerprint: { value: '' },
+      certTrusted: { value: '' },
+      certName: { value: '' },
       username: { value: '' },
     },
     credentials: {
@@ -31,13 +35,35 @@
       return this.name || (this.host ? `${p} ${this.host}:${this.port || 102}` : 's7 endpoint');
     },
     oneditprepare: function () {
+      const node = this;
       const sync = () => {
         const plus = $('#node-config-input-protocol').val() === 's7plus';
+        const tls = plus && $('#node-config-input-tls').prop('checked');
+        const v = $('#node-config-input-certVerify').val();
         $('.s7rs-classic').toggle(!plus);
         $('.s7rs-plus').toggle(plus);
+        $('.s7rs-tls').toggle(tls);
+        $('.s7rs-cert-fp').toggle(tls && v === 'fingerprint');
+        $('.s7rs-cert-trusted').toggle(tls && v === 'trusted');
       };
-      $('#node-config-input-protocol').on('change', sync);
+      $('#node-config-input-protocol, #node-config-input-tls, #node-config-input-certVerify').on('change', sync);
       sync();
+      // reads the certificate of the deployed endpoint (the user checks it before trusting it)
+      $('#s7rs-cert-read').on('click', () => {
+        const out = $('#s7rs-cert-info').text(node._('s7rs-endpoint.cert.reading'));
+        $.getJSON(`s7rs/call/${encodeURIComponent(node.id)}/certificate`)
+          .done((c) => {
+            out.text(`${c.subject}\n${node._('s7rs-endpoint.cert.issuer')}: ${c.issuer}\n${c.notBefore} - ${c.notAfter}\n${(c.altNames || []).join(', ')}\nSHA-256 ${c.fingerprint}`);
+            $('#s7rs-cert-use').show().off('click').on('click', () => {
+              $('#node-config-input-certFingerprint').val(c.fingerprint);
+              $('#node-config-input-certTrusted').val(c.pem);
+            });
+          })
+          .fail((x) => {
+            out.text((x.responseJSON && x.responseJSON.error) || node._('s7rs-endpoint.cert.notDeployed'));
+            $('#s7rs-cert-use').hide();
+          });
+      });
     },
   });
 </script>
@@ -128,6 +154,32 @@
     <label for="node-config-input-tls">&nbsp;</label>
     <input type="checkbox" id="node-config-input-tls" style="width: auto; display: inline-block" />
     <span data-i18n="s7rs-endpoint.label.tls"></span>
+  </div>
+  <div class="form-row s7rs-tls">
+    <label for="node-config-input-certVerify"><i class="fa fa-certificate"></i> <span data-i18n="s7rs-endpoint.label.certVerify"></span></label>
+    <select id="node-config-input-certVerify">
+      <option value="none" data-i18n="s7rs-endpoint.certVerify.none"></option>
+      <option value="fingerprint" data-i18n="s7rs-endpoint.certVerify.fingerprint"></option>
+      <option value="trusted" data-i18n="s7rs-endpoint.certVerify.trusted"></option>
+    </select>
+  </div>
+  <div class="form-row s7rs-cert-fp">
+    <label for="node-config-input-certFingerprint" data-i18n="s7rs-endpoint.label.certFingerprint"></label>
+    <input type="text" id="node-config-input-certFingerprint" placeholder="AB:9F:2B:..." style="font-family: monospace" />
+  </div>
+  <div class="form-row s7rs-cert-trusted">
+    <label for="node-config-input-certTrusted" data-i18n="s7rs-endpoint.label.certTrusted"></label>
+    <textarea id="node-config-input-certTrusted" rows="6" placeholder="-----BEGIN CERTIFICATE-----" style="width: 70%; font-family: monospace; font-size: 11px"></textarea>
+  </div>
+  <div class="form-row s7rs-cert-trusted">
+    <label for="node-config-input-certName" data-i18n="s7rs-endpoint.label.certName"></label>
+    <input type="text" id="node-config-input-certName" data-i18n="[placeholder]s7rs-endpoint.placeholder.certName" />
+  </div>
+  <div class="form-row s7rs-tls">
+    <label>&nbsp;</label>
+    <button type="button" class="red-ui-button" id="s7rs-cert-read" data-i18n="s7rs-endpoint.cert.read"></button>
+    <button type="button" class="red-ui-button" id="s7rs-cert-use" style="display: none" data-i18n="s7rs-endpoint.cert.use"></button>
+    <pre id="s7rs-cert-info" style="margin: 6px 0 0 104px; white-space: pre-wrap; font-size: 11px"></pre>
   </div>
   <div class="form-row s7rs-plus">
     <label for="node-config-input-username"><i class="fa fa-user"></i> <span data-i18n="s7rs-endpoint.label.username"></span></label>

@@ -30,6 +30,10 @@
   <h4>S7CommPlus</h4>
   <ul>
     <li><code>info</code>: session, PAOM string, limits</li>
+      <li><code>certificate</code>: the PLC certificate of the TLS session: <code>subject</code>,
+        <code>issuer</code>, <code>notBefore</code>, <code>notAfter</code>, <code>altNames</code>,
+        <code>fingerprint</code> (SHA-256), <code>pem</code>, and <code>check</code> (the check
+        of the endpoint)</li>
     <li><code>dbs</code>: data blocks; <code>browse</code>: all symbols with their types</li>
     <li><code>alarms {all}</code>: active alarms; <code>limits</code>: system limits</li>
   </ul>

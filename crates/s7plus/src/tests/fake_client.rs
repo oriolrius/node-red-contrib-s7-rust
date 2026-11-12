@@ -13,7 +13,7 @@ use crate::softdt::*;
 use crate::subscribe::{decode_notification, SubOptions};
 use crate::tags::{db_area, AreaItem, AREA_DB, AREA_FLAGS};
 use crate::textfmt::{duration_string, DateTime};
-use crate::tls::{NssKeyLog, SharedBuf, TlsOptions};
+use crate::tls::{CertVerify, NssKeyLog, SharedBuf, TlsOptions};
 use crate::value::Value;
 use crate::wire::{Reader, Writer};
 use crate::{decode_alarm, AlarmSubOptions, Client, Error, Options, OP_STATE_RUN, OP_STATE_STOP};
@@ -612,4 +612,62 @@ fn logger_traces_frames() {
     assert!(lines.iter().any(|l| l.starts_with("Trace s7plus: > V2 Request GetMultiVariables")), "{lines:?}");
     assert!(lines.iter().any(|l| l.starts_with("Info s7plus: session 0x39c")), "{lines:?}");
     let _ = DateTime::default();
+}
+
+fn tls_dial(f: &FakePlc, verify: CertVerify, name: &str) -> Result<Client, Error> {
+    Client::connect(Options {
+        addr: f.addr(),
+        timeout: Duration::from_secs(2),
+        tls: Some(TlsOptions { verify, server_name: name.into(), ..Default::default() }),
+        ..Default::default()
+    })
+}
+
+fn refused(r: Result<Client, Error>, what: &str) -> Error {
+    match r {
+        Ok(_) => panic!("{what}"),
+        Err(e) => e,
+    }
+}
+
+#[test]
+fn certificate_verification_fake() {
+    let f = FakePlc::start().unwrap();
+    f.enable_tls().unwrap();
+    let der = f.tls_cert().unwrap();
+    let fp = crate::tls::fingerprint_text(&crate::tls::fingerprint(&der));
+    // no check: any certificate; the session keeps the PLC certificate
+    let c = tls_dial(&f, CertVerify::None, "").unwrap();
+    assert_eq!(c.info().peer_cert.as_deref(), Some(&der[..]));
+    // pinned fingerprint
+    assert!(tls_dial(&f, CertVerify::fingerprints(&fp).unwrap(), "").is_ok());
+    let e = refused(tls_dial(&f, CertVerify::fingerprints(&"00".repeat(32)).unwrap(), ""), "wrong fingerprint accepted");
+    let t = e.to_string();
+    assert!(matches!(e, Error::Certificate(_)) && t.contains(&fp) && t.contains("does not match the fingerprint"), "{t}");
+    // the self-signed certificate as trusted certificate (SAN fake-plc, 127.0.0.1)
+    let pem = crate::x509::pem(&der);
+    assert!(tls_dial(&f, CertVerify::trusted_pem(&pem).unwrap(), "").is_ok());
+    assert!(tls_dial(&f, CertVerify::trusted_pem(&pem).unwrap(), "fake-plc").is_ok());
+    let e = refused(tls_dial(&f, CertVerify::trusted_pem(&pem).unwrap(), "other-plc"), "wrong name accepted").to_string();
+    assert!(e.contains("not valid for this name") && e.contains("other-plc"), "{e}");
+    // another certificate as trusted certificate
+    let other = FakePlc::start().unwrap();
+    other.enable_tls().unwrap();
+    let pem2 = crate::x509::pem(&other.tls_cert().unwrap());
+    let e = refused(tls_dial(&f, CertVerify::trusted_pem(&pem2).unwrap(), ""), "untrusted accepted").to_string();
+    assert!(e.contains("not signed by a trusted certificate") && e.contains("CN=PLC-1/Communication-1"), "{e}");
+}
+
+#[test]
+fn certificate_signed_by_project_ca_fake() {
+    let f = FakePlc::start().unwrap();
+    let ca = f.enable_tls_signed(&["127.0.0.1"]).unwrap();
+    let ca_pem = crate::x509::pem(&ca);
+    assert!(tls_dial(&f, CertVerify::trusted_pem(&ca_pem).unwrap(), "").is_ok(), "chain to the project CA");
+    let info = crate::x509::parse(&f.tls_cert().unwrap()).unwrap();
+    assert!(!info.self_signed && info.issuer == "CN=Fake project CA" && info.alt_names == ["IP:127.0.0.1"], "{info:?}");
+    assert!(crate::x509::parse(&ca).unwrap().ca);
+    // the name check uses the address when no name is set: a DNS name fails
+    let e = refused(tls_dial(&f, CertVerify::trusted_pem(&ca_pem).unwrap(), "plc.local"), "accepted").to_string();
+    assert!(e.contains("not valid for this name"), "{e}");
 }

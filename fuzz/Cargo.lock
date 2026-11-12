@@ -356,7 +356,7 @@ checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
 name = "s7"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "chrono",
  "socket2",
@@ -373,7 +373,7 @@ dependencies = [
 
 [[package]]
 name = "s7plus"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "aes",
  "flate2",

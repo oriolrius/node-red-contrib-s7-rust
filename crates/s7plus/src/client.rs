@@ -121,6 +121,8 @@ pub struct SessionInfo {
     pub protocol_ver: u8,
     pub init_ssl_refused: bool,
     pub tls: bool,
+    /// The PLC certificate (DER) of a TLS session.
+    pub peer_cert: Option<Vec<u8>>,
 }
 
 impl SessionInfo {
@@ -623,14 +625,39 @@ impl Conn {
         log_with(&self.logger, Level::Info, || {
             format!("s7plus: session {:#x} paom {:?} tls={}", self.session, st.get(319).map(|v| v.to_string()), self.link.is_tls())
         });
-        Ok(SessionInfo { session: self.session, session2, server_session: st, protocol_ver: 2, init_ssl_refused, tls: self.link.is_tls() })
+        Ok(SessionInfo {
+            session: self.session,
+            session2,
+            server_session: st,
+            protocol_ver: 2,
+            init_ssl_refused,
+            tls: self.link.is_tls(),
+            peer_cert: self.link.peer_certificate(),
+        })
     }
 
     fn start_tls(&mut self, t: &TlsOptions, addr: &str) -> Result<()> {
-        let cfg = client_config(t)?;
+        let (cfg, ver) = client_config(t)?;
         let conn = rustls::ClientConnection::new(cfg, server_name(t, addr)).map_err(|e| Error::Tls(e.to_string()))?;
         self.link.set_deadline(Some(Instant::now() + self.timeout));
-        self.link.start_tls(rustls::Connection::Client(conn)).map_err(|e| Error::proto(format!("TLS: {e}")))?;
+        if let Err(e) = self.link.start_tls(rustls::Connection::Client(conn)) {
+            if let Some(why) = ver.as_ref().and_then(|v| v.refused()) {
+                return Err(Error::Certificate(why));
+            }
+            return Err(Error::proto(format!("TLS: {e}")));
+        }
+        if let Some(der) = self.link.peer_certificate() {
+            let logger = self.logger.clone();
+            log_with(&logger, Level::Info, || {
+                let i = crate::x509::parse(&der).unwrap_or_default();
+                format!(
+                    "s7plus: PLC certificate {} (SHA-256 {}), check: {}",
+                    i.subject,
+                    crate::tls::fingerprint_text(&crate::tls::fingerprint(&der)),
+                    t.verify.mode()
+                )
+            });
+        }
         self.oms_secret = self.link.export_keying_material(b"EXPERIMENTAL_OMS", 32);
         self.integrity = true;
         Ok(())
