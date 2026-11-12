@@ -140,7 +140,7 @@ fn browse_and_symbolic_fake() {
     let bit = by_name["\"Std_DB\".Bit"];
     assert!(bit.non_opt_offset == 2 && bit.non_opt_bit == 3, "Std_DB.Bit {bit:?}");
     assert_eq!(by_name["\"Data_block_1\".Str"].max_len, 10);
-    assert_eq!(vars.len(), 5 + 5 + 6 + 2 + 4 + 1 + 22 + 10 + 2 + 2 + 1, "variables");
+    assert_eq!(vars.len(), 5 + 5 + 6 + 2 + 4 + 1 + 22 + 10 + 1 + 2 + 2 + 1, "variables"); // + BFlag
 
     // symbolic write + read of every type
     let vals: &[(&str, &str)] = &[
@@ -239,6 +239,23 @@ fn browse_and_symbolic_fake() {
     assert_eq!(m.get("Motor_On").map(|s| s.as_str()), Some("M10.2"));
     assert_eq!(m.get("Speed").map(|s| s.as_str()), Some("MW12:int"));
     assert!(!m.contains_key("\"Data_block_1\".Int1"), "optimized DB mapped");
+}
+
+// A Bool of an optimized S7-1500 DB has the softdatatype BBool: it reads and
+// writes like a Bool (PLCSIM FW S4.1: "writing BBool is not supported").
+#[test]
+fn bbool_write_fake() {
+    let f = FakePlc::start().unwrap();
+    let c = dial(&f, Options::default());
+    let mut t = vec![c.resolve_tag("\"Data_block_1\".BFlag").unwrap()];
+    assert_eq!(t[0].softdatatype, SDT_BBOOL);
+    for v in ["true", "false", "1"] {
+        let errs = c.write_tags(&t, &[v]).unwrap();
+        assert!(errs[0].is_none(), "write {v}: {:?}", errs[0]);
+        let r = c.read_tags(&mut t).unwrap();
+        assert_eq!(r[0].value, Some(PlcValue::Bool(v != "false")), "read after write {v}");
+    }
+    assert!(c.write_tags(&t, &["maybe"]).unwrap()[0].is_some(), "bad bool accepted");
 }
 
 // S7-1500 FW V4.x sets the optimized-access flag in standard DBs too (#10).

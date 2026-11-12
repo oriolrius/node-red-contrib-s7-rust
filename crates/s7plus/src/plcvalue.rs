@@ -501,7 +501,8 @@ pub fn encode_plc(t: &Tag, s: &str) -> Result<Value> {
     let pi = |bits| textfmt::parse_int(s, bits).ok_or_else(|| syn("integer"));
     let pu = |bits| textfmt::parse_uint(s, bits).ok_or_else(|| syn("unsigned integer"));
     Ok(match t.softdatatype {
-        SDT_BOOL => Value::bool(textfmt::parse_bool(s).ok_or_else(|| syn("bool"))?),
+        // BBool: a Bool member of an optimized DB (S7-1500); same wire type as Bool
+        SDT_BOOL | SDT_BBOOL => Value::bool(textfmt::parse_bool(s).ok_or_else(|| syn("bool"))?),
         SDT_BYTE => Value::byte(pu(8)? as u8),
         SDT_USINT => Value::usint(pu(8)? as u8),
         SDT_SINT => Value::new(T_SINT, V::I8(pi(8)? as i8)),

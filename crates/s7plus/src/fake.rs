@@ -1006,6 +1006,8 @@ fn db1_vars() -> Vec<Vt> {
         vt("DW", 0x28, SDT_DWORD, std_oi(198, 198), 0),
         vt("DI", 0x29, SDT_DINT, std_oi(202, 202), 0),
         vt("Bools", 0x2A, SDT_BOOL, OffsetInfo { opt_addr: 206, non_opt_addr: 206, count: 10, ..oi(OI_ARRAY_1DIM) }, 0),
+        // a Bool of an optimized S7-1500 DB (softdatatype BBool)
+        vt("BFlag", 0x2B, SDT_BBOOL, std_oi(208, 0), 0),
     ]
 }
 
@@ -1051,7 +1053,7 @@ fn zero_for(sdt: u8, max_len: u16) -> Value {
         _ => {}
     }
     let s = match sdt {
-        SDT_BOOL => "false",
+        SDT_BOOL | SDT_BBOOL => "false",
         SDT_CHAR | SDT_WCHAR => " ",
         SDT_DATE => "1990-01-01",
         SDT_TIME_OF_DAY | SDT_LTOD | SDT_S5TIME => "0",

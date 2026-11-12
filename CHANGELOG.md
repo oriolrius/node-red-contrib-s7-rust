@@ -18,6 +18,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- S7CommPlus: a Bool member of an optimized S7-1500 DB (softdatatype BBool) could not be written
+  ("writing BBool is not supported"); reads worked. It is now written like a Bool. Found on
+  PLCSIM Advanced V8 (FW S4.1); the fake PLC has a BBool member (`"Data_block_1".BFlag`).
 - S7CommPlus subscriptions on S7-1500 FW V4.x: with cycle time 0 the PLC sends only the first
   notification. `SubOptions::cycle_ms` documents it; the fake PLC models it
   (`FakeModel::sub_needs_cycle`), and golden tests decode FW V4.x notifications (change counter,
