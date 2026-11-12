@@ -6,12 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-12
+
 ### Added
 
-- `test/plcsim/`: the PLCSIM Advanced test program (SIMATIC SD documents of the DBs, the alarm FB
-  and OB1), how to load it with TIA Portal (Openness MCP), and two manual live-test scripts
-  (`s7 watch` push/poll, `s7 alarms`). `npm test` does not use them.
-
+- `s7 watch`: mode "PLC subscription" (S7CommPlus). The node subscribes to the tags with the
+  interval as cycle time, and the PLC sends only the values that changed (no read request per
+  cycle). `msg.ts` is the PLC time of the notification when the PLC sends one. After a reconnect
+  the node subscribes again; when the PLC refuses the subscription (or for S7comm) it reads
+  cyclically. Tested on PLCSIM Advanced V8 (FW S4.1) with TLS: first message with all tags, then
+  the changes every cycle, and a write is in the next notification. The default stays "read
+  cyclically".
 - `s7 alarms` node (S7CommPlus): one message per PLC alarm event (`msg.state` coming / going,
   `msg.topic` the alarm id, `msg.payload` times, associated values, priority, class, texts). At
   start, and again after a reconnect, it sends the active alarms (`msg.initial`). The status shows
@@ -23,14 +28,9 @@ All notable changes to this project are documented here. The format follows
   `alarmClass` and the associated values. The fake PLC sends alarm notifications
   (`FakePlc::raise_alarm`, `FakeModel::alarm_needs_reference`); golden tests decode PLCSIM alarm
   notifications.
-
-- `s7 watch`: mode "PLC subscription" (S7CommPlus). The node subscribes to the tags with the
-  interval as cycle time, and the PLC sends only the values that changed (no read request per
-  cycle). `msg.ts` is the PLC time of the notification when the PLC sends one. After a reconnect
-  the node subscribes again; when the PLC refuses the subscription (or for S7comm) it reads
-  cyclically. Tested on PLCSIM Advanced V8 (FW S4.1) with TLS: first message with all tags, then
-  the changes every cycle, and a write is in the next notification. The default stays "read
-  cyclically".
+- `test/plcsim/`: the PLCSIM Advanced test program (SIMATIC SD documents of the DBs, the alarm FB
+  and OB1), how to load it with TIA Portal (Openness MCP), and two manual live-test scripts
+  (`s7 watch` push/poll, `s7 alarms`). `npm test` does not use them.
 
 ### Fixed
 
@@ -140,7 +140,8 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.5...v1.1.0
 [1.0.5]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.2...v1.0.3
