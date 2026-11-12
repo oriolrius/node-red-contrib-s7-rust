@@ -1,0 +1,23 @@
+﻿{
+    S7_Optimized := "TRUE";
+    S7_PreferredLanguage := "LAD";
+    S7_Version := "0.1"
+}
+ORGANIZATION_BLOCK "Main"
+    { S7_Language := "SCL" }
+    NETWORK
+        // s7rs subscription tests: free-running timer, tick = 100 ms steps since start
+        "SimTimers".t100(IN := TRUE, PT := T#24D);
+        "TestSub".tick := TIME_TO_DINT("SimTimers".t100.ET) / 100;
+        "TestSub".toggle := ("TestSub".tick / 10) MOD 2 = 1;
+        "TestSub".slow := DINT_TO_INT("TestSub".tick / 50);
+        "TestSub".rSine := SIN(DINT_TO_REAL("TestSub".tick) * 0.1);
+        // write -> echo: a client writes sp, the PLC copies it to echo
+        IF "TestSub".echo <> "TestSub".sp THEN
+            "TestSub".echo := "TestSub".sp;
+            "TestSub".lastWrite := "TestSub".tick;
+        END_IF;
+        // alarms for the s7rs alarm tests (Program_Alarm in FB AlarmGen)
+        "AlarmGen_DB"();
+    END_NETWORK
+END_ORGANIZATION_BLOCK

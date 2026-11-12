@@ -1,0 +1,23 @@
+﻿{
+    S7_Optimized := "FALSE";
+    S7_StandardRetain := "FALSE";
+    S7_Version := "0.1"
+}
+DATA_BLOCK TestAbs
+    VAR
+        b0 : Byte;
+        b1 : Byte;
+        i2 : Int;
+        di4 : DInt;
+        r8 : Real;
+        x12 : Bool;
+    END_VAR
+
+    b0 := 16#11;
+    b1 := 16#22;
+    i2 := -42;
+    di4 := 123456;
+    r8 := 1.5;
+    x12 := TRUE;
+
+END_DATA_BLOCK

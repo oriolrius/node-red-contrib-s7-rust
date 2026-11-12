@@ -1,0 +1,18 @@
+﻿{
+    S7_Optimized := "TRUE";
+    S7_StandardRetain := "FALSE";
+    S7_Version := "0.1"
+}
+DATA_BLOCK TestSub
+    VAR
+        tick : DInt;
+        toggle : Bool;
+        rSine : Real;
+        slow : Int;
+        sp : Int;
+        echo : Int;
+        lastWrite : DInt;
+        alarmReq : Bool;
+        alarmVal : Int;
+    END_VAR
+END_DATA_BLOCK
