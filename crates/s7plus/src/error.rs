@@ -34,6 +34,9 @@ pub enum Error {
     /// The PLC certificate failed the check of [`crate::CertVerify`], or the
     /// check settings are wrong. A reconnect does not help.
     Certificate(String),
+    /// The PLC certificate failed the check of [`crate::CertVerify`]: the
+    /// reason and the refused certificate (DER), to show it to the user.
+    CertificateRefused { reason: String, cert: Vec<u8> },
 }
 
 impl Error {
@@ -43,6 +46,14 @@ impl Error {
             Error::Proto(s)
         } else {
             Error::Proto(format!("s7plus: {s}"))
+        }
+    }
+
+    /// The PLC certificate (DER) that the certificate check refused.
+    pub fn refused_certificate(&self) -> Option<&[u8]> {
+        match self {
+            Error::CertificateRefused { cert, .. } => Some(cert),
+            _ => None,
         }
     }
 
@@ -75,6 +86,7 @@ impl fmt::Display for Error {
             Error::BitWrite => write!(f, "s7plus: bit writes are not supported by byte-area access"),
             Error::Tls(s) => write!(f, "s7plus: TLS: {s}"),
             Error::Certificate(s) => write!(f, "s7plus: TLS: {s}"),
+            Error::CertificateRefused { reason, .. } => write!(f, "s7plus: TLS: {reason}"),
         }
     }
 }

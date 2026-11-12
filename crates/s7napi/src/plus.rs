@@ -89,7 +89,7 @@ fn cert_json(der: &[u8], check: &str) -> J {
     json!({
         "subject": i.subject, "issuer": i.issuer, "notBefore": i.not_before, "notAfter": i.not_after,
         "altNames": i.alt_names, "fingerprint": s7plus::fingerprint_text(&s7plus::fingerprint(der)),
-        "selfSigned": i.self_signed, "ca": i.ca, "check": check, "pem": s7plus::x509::pem(der),
+        "selfSigned": i.self_signed, "ca": i.ca, "check": check, "pem": s7plus::x509::pem(der), "refused": false,
     })
 }
 
@@ -570,7 +570,19 @@ impl Device for PlusDev {
                 })
             }
             "certificate" => {
-                let c = self.client().map_err(e)?;
+                let c = match self.client() {
+                    Ok(c) => c,
+                    // the check refused the certificate: show it (the user compares it with TIA Portal)
+                    Err(err) => match err.refused_certificate() {
+                        Some(der) => {
+                            let mut j = cert_json(der, self.cfg.verify.mode());
+                            j["refused"] = J::Bool(true);
+                            j["error"] = J::String(err.to_string());
+                            return Ok(j);
+                        }
+                        None => return Err(e(err)),
+                    },
+                };
                 match c.info().peer_cert.as_deref() {
                     Some(der) => cert_json(der, self.cfg.verify.mode()),
                     None => return Err("the session has no TLS: turn on TLS in the endpoint".into()),

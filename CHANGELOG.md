@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `s7 endpoint` editor, *Read from the PLC*: when the check of the deployed endpoint refused the
+  PLC certificate, the button showed only the error, so a new PLC certificate could not be taken
+  over with *Use this certificate*. It now shows the refused certificate with a warning. `s7 info`
+  action `certificate` returns it with `refused: true` and `error`; a trusted certificate has
+  `refused: false`.
+- Rust crate `s7plus`: a refused certificate gives `Error::CertificateRefused { reason, cert }`
+  (before: `Error::Certificate`, which now means a wrong check setting only) and
+  `Error::refused_certificate()`.
+
 ## [1.2.0] - 2026-11-12
 
 ### Added

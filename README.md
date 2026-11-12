@@ -188,7 +188,9 @@ Node-RED and the PLC can show its own certificate). In the endpoint, set "PLC ce
 
 *Read from the PLC* in the endpoint editor (or `s7 info` action `certificate`) shows the
 certificate of the deployed endpoint: compare it with TIA Portal before you trust it. When the
-check fails, the endpoint stays disconnected and the error shows the fingerprint it got.
+check fails, the endpoint stays disconnected and the error shows the fingerprint it got; *Read
+from the PLC* then shows the refused certificate with a warning (`refused: true`), so a new PLC
+certificate can be checked and taken over.
 
 ## Addresses
 

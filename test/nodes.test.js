@@ -353,3 +353,24 @@ test('S7CommPlus: check of the PLC certificate (TLS)', async () => {
     stopAll();
   }
 });
+
+test('S7CommPlus: the certificate action shows a refused certificate', async () => {
+  const addr = fakes.startFakeS7Plus(true);
+  const [host, port] = addr.split(':');
+  const pem = fakes.fakeS7PlusCertificate(addr);
+  await helper.load(NODES, [
+    { id: 'ep', type: 's7rs-endpoint', protocol: 's7plus', host, port, tls: true, timeout: 2000, certVerify: 'fingerprint', certFingerprint: '00'.repeat(32) },
+    { id: 'i', type: 's7rs-info', endpoint: 'ep', action: 'certificate', wires: [['out-i']] },
+    { id: 'out-i', type: 'helper' },
+  ]);
+  const ep = helper.getNode('ep');
+  await ep.ready;
+  await until(() => ep.state.state === 'faulted');
+  const http = helper.request();
+  const c = (await http.get('/s7rs/call/ep/certificate').expect(200)).body;
+  assert.equal(c.refused, true);
+  assert.equal(c.pem, pem);
+  assert.equal(c.check, 'fingerprint');
+  assert.ok(c.error.includes(c.fingerprint) && /does not match/.test(c.error), 'error names the fingerprint');
+  assert.equal(ep.state.state, 'faulted');
+});
