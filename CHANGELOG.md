@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-11-12
+
 ### Fixed
 
 - `s7 endpoint`, PLC certificate check *trusted certificate or project CA*: the PLC certificate
@@ -185,7 +187,8 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.0.5...v1.1.0
