@@ -46,8 +46,8 @@ fn fingerprint_parsing() {
         }
     }
     for bad in ["", " , ", "AB:9F", &"zz".repeat(32)] {
-        let e = CertVerify::fingerprints(bad).unwrap_err().to_string();
-        assert!(e.contains("fingerprint"), "{bad:?}: {e}");
+        let ok = CertVerify::fingerprints(bad).is_err_and(|e| e.to_string().contains("fingerprint"));
+        assert!(ok, "no fingerprint error for {bad:?}");
     }
     assert!(CertVerify::trusted_pem("not a pem").unwrap_err().to_string().contains("PEM"));
 }
