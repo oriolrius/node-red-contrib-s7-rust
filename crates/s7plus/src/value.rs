@@ -499,6 +499,15 @@ impl Struct {
 
 /// Reads flags, datatype and payload.
 pub fn decode_value(r: &mut Reader) -> Value {
+    if !r.enter() {
+        return Value { flags: 0, typ: T_NULL, v: V::Null };
+    }
+    let v = decode_value_inner(r);
+    r.leave();
+    v
+}
+
+fn decode_value_inner(r: &mut Reader) -> Value {
     let flags = r.byte();
     let t = r.byte();
     let mut v = Value { flags, typ: t, v: V::Null };

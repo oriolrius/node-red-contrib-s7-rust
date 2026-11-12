@@ -190,6 +190,15 @@ impl fmt::Display for Object {
 
 /// Reads an object that starts with 0xa1 up to its 0xa2.
 pub fn decode_object(r: &mut Reader) -> Option<Object> {
+    if !r.enter() {
+        return None;
+    }
+    let o = decode_object_inner(r);
+    r.leave();
+    o
+}
+
+fn decode_object_inner(r: &mut Reader) -> Option<Object> {
     if r.byte() != ELEM_START_OBJECT {
         let at = r.pos.saturating_sub(1);
         r.set_err(Error::proto(format!("object does not start with 0xa1 at {at}")));

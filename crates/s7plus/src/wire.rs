@@ -10,11 +10,32 @@ pub struct Reader<'a> {
     pub b: &'a [u8],
     pub pos: usize,
     pub err: Option<Error>,
+    /// Nesting of values and objects being decoded (see [`Reader::enter`]).
+    depth: u16,
 }
+
+/// The deepest nesting of structs, arrays of structs and objects a decoder
+/// accepts (a hostile frame could otherwise exhaust the stack).
+pub const MAX_NESTING: u16 = 64;
 
 impl<'a> Reader<'a> {
     pub fn new(b: &'a [u8]) -> Self {
-        Reader { b, pos: 0, err: None }
+        Reader { b, pos: 0, err: None, depth: 0 }
+    }
+
+    /// Enters one nesting level; false (and an error) beyond [`MAX_NESTING`].
+    /// Call [`Reader::leave`] after a true.
+    pub(crate) fn enter(&mut self) -> bool {
+        if self.depth >= MAX_NESTING {
+            self.set_err(Error::proto(format!("nesting deeper than {MAX_NESTING} levels")));
+            return false;
+        }
+        self.depth += 1;
+        true
+    }
+
+    pub(crate) fn leave(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
     }
 
     pub(crate) fn fail(&mut self) {

@@ -240,3 +240,46 @@ fn ack_job_list_encoding() {
     assert!(r.err.is_none() && r.left() == 0);
     assert_eq!(&back, v);
 }
+
+/// Deeply nested arrays of structs, structs and objects end with an error
+/// instead of exhausting the stack (review: a 180 kB frame aborted).
+#[test]
+fn nesting_limit() {
+    use crate::value::Value;
+    use crate::wire::{Reader, MAX_NESTING};
+    // array of struct 1, one element, member 1 = the same again, 60000 times
+    let mut b = Vec::new();
+    for _ in 0..60_000 {
+        b.extend_from_slice(&[0x20, 0x17, 0, 0, 0, 1, 0x01, 0x01]);
+    }
+    let mut r = Reader::new(&b);
+    Value::decode(&mut r);
+    assert!(r.err.as_ref().is_some_and(|e| e.to_string().contains("nesting")), "{:?}", r.err);
+    // plain structs: 00 17 <id> then member 1 = another struct
+    let mut b = Vec::new();
+    for _ in 0..60_000 {
+        b.extend_from_slice(&[0x00, 0x17, 0, 0, 0, 1, 0x01]);
+    }
+    let mut r = Reader::new(&b);
+    Value::decode(&mut r);
+    assert!(r.err.is_some());
+    // objects inside objects
+    let mut b = Vec::new();
+    for _ in 0..60_000 {
+        b.extend_from_slice(&[0xa1, 0, 0, 0, 1, 1, 0, 0]);
+    }
+    let mut r = Reader::new(&b);
+    assert!(crate::object::decode_object(&mut r).is_none() || r.err.is_some());
+    assert!(r.err.is_some());
+    // a legal depth still decodes: nested arrays of structs below the limit
+    let d = (MAX_NESTING as usize / 2) - 2;
+    let mut b = Vec::new();
+    for _ in 0..d {
+        b.extend_from_slice(&[0x20, 0x17, 0, 0, 0, 1, 0x01, 0x01]);
+    }
+    b.extend_from_slice(&[0x00, 0x02, 0x07]); // USInt 7
+    b.extend(std::iter::repeat_n(0u8, d)); // the member list terminators
+    let mut r = Reader::new(&b);
+    Value::decode(&mut r);
+    assert!(r.err.is_none() && r.left() == 0, "{:?} left {}", r.err, r.left());
+}
