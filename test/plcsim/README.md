@@ -66,4 +66,9 @@ address (default 192.168.0.1).
 Expected: push mode sends all tags first, then `tick` / `rSine` every 100 ms and the writes about
 100 ms later; `alReq` comes about 20 ms after the write of `alarmReq = true` with the value
 `[4, 210]` (1234) and goes after `false`; `alAuto` comes and goes every 5 s. The PLC certificate
-of PLCSIM is self-signed (CN `PLC-1/Communication-1`, `IP:192.168.0.1`).
+of PLCSIM is self-signed (CN `PLC-1/Communication-1`, `IP:192.168.0.1`). With "Use global security
+settings for certificate manager" (TIA Portal, CPU properties, Protection & Security, Certificate
+manager) the project CA ("Siemens TIA Project- <project>- (EC)-n") signs it; export the CA in
+Security settings, Security features, Certificate manager, to test *trusted certificate or
+project CA* with it. TIA Portal Openness V21 has no API for the global certificate manager, and
+a download after a change of the PLC certificate needs the trust dialog of TIA Portal.

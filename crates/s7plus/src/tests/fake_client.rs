@@ -689,6 +689,12 @@ fn certificate_signed_by_project_ca_fake() {
     let info = crate::x509::parse(&f.tls_cert().unwrap()).unwrap();
     assert!(!info.self_signed && info.issuer == "CN=Fake project CA" && info.alt_names == ["IP:127.0.0.1"], "{info:?}");
     assert!(crate::x509::parse(&ca).unwrap().ca);
+    // the PLC certificate itself as trusted certificate (editor "Use this certificate"):
+    // accepted without the CA; the name is still checked
+    let leaf_pem = crate::x509::pem(&f.tls_cert().unwrap());
+    assert!(tls_dial(&f, CertVerify::trusted_pem(&leaf_pem).unwrap(), "").is_ok(), "CA-signed PLC certificate trusted by itself");
+    let e = refused(tls_dial(&f, CertVerify::trusted_pem(&leaf_pem).unwrap(), "plc.local"), "accepted").to_string();
+    assert!(e.contains("not valid for this name"), "unexpected error");
     // the name check uses the address when no name is set: a DNS name fails
     let e = refused(tls_dial(&f, CertVerify::trusted_pem(&ca_pem).unwrap(), "plc.local"), "accepted").to_string();
     assert!(e.contains("not valid for this name"), "unexpected certificate error");

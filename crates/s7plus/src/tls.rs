@@ -295,16 +295,30 @@ impl PlcCertVerifier {
                     Err(format!("{} does not match the fingerprint in the endpoint", who()))
                 }
             }
-            CertVerify::Trusted(_) => {
+            CertVerify::Trusted(list) => {
                 let parsed = ParsedCertificate::try_from(ee).map_err(|e| format!("{}: {e}", who()))?;
-                verify_server_cert_signed_by_trust_anchor(
-                    &parsed,
-                    &self.roots,
-                    im,
-                    now,
-                    self.provider.signature_verification_algorithms.all,
-                )
-                .map_err(|e| format!("{} {}", who(), cert_reason(&e)))?;
+                if list.iter().any(|c| c.as_ref() == ee.as_ref()) {
+                    // the PLC certificate itself is trusted ("Use this certificate"): also
+                    // when a CA signed it, the chain is not needed; the dates and the name are
+                    // still checked
+                    let (from, until) = crate::x509::validity(ee).ok_or_else(|| format!("{}: no validity dates", who()))?;
+                    let t = now.as_secs();
+                    if t < from {
+                        return Err(format!("{} is not valid yet (check the clocks)", who()));
+                    }
+                    if t > until {
+                        return Err(format!("{} has expired", who()));
+                    }
+                } else {
+                    verify_server_cert_signed_by_trust_anchor(
+                        &parsed,
+                        &self.roots,
+                        im,
+                        now,
+                        self.provider.signature_verification_algorithms.all,
+                    )
+                    .map_err(|e| format!("{} {}", who(), cert_reason(&e)))?;
+                }
                 verify_server_name(&parsed, name).map_err(|e| {
                     let n = match name {
                         ServerName::IpAddress(ip) => std::net::IpAddr::from(*ip).to_string(),

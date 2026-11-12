@@ -68,3 +68,48 @@ fn plcsim_certificate_trusted_by_itself() {
     let late = UnixTime::since_unix_epoch(std::time::Duration::from_secs(2_200_000_000)); // 2039
     assert!(verify_server_cert_signed_by_trust_anchor(&parsed, &roots, &[], late, algs).is_err());
 }
+
+#[test]
+fn validity_in_unix_seconds() {
+    let (from, until) = x509::validity(&plcsim_der()).unwrap();
+    assert_eq!(from, 1_794_423_551); // 2026-11-11T18:59:11Z
+    assert_eq!(until, 2_141_506_800); // 2037-11-10T23:00:00Z
+}
+
+#[test]
+fn der_time_strict() {
+    use crate::x509::{der_time_secs, Tlv};
+    let t = |tag: u8, s: &str| der_time_secs(&Tlv { tag, body: s.as_bytes() });
+    assert_eq!(t(0x17, "261111185911Z"), Some(1_794_423_551));
+    assert_eq!(t(0x18, "20261111185911Z"), Some(1_794_423_551));
+    assert_eq!(t(0x17, "500101000000Z"), None); // 1950: before the Unix epoch
+    assert_eq!(t(0x17, "700101000000Z"), Some(0));
+    assert_eq!(t(0x17, "491231235959Z"), Some(2_524_607_999)); // 2049
+    assert_eq!(t(0x18, "20240229120000Z"), Some(1_709_208_000)); // leap day
+    assert_eq!(t(0x18, "20000229000000Z"), Some(951_782_400)); // 2000 is leap
+    for (tag, bad) in [
+        (0x17, "261111185911X"), // not UTC
+        (0x17, "2611111859Z"),   // no seconds
+        (0x17, "261111185911+0100"),
+        (0x18, "20261111185911.5Z"),
+        (0x18, "20230229000000Z"), // no leap day
+        (0x18, "21000229000000Z"), // 2100 is no leap year
+        (0x17, "261311185911Z"),   // month 13
+        (0x17, "261100185911Z"),   // day 0
+        (0x17, "261111245911Z"),   // hour 24
+        (0x17, "261111186011Z"),   // minute 60
+        (0x17, "261111185960Z"),   // second 60
+        (0x17, "26111118591+Z"),
+        (0x17, "2611111859１Z"),
+        (0x18, "261111185911Z"), // UTCTime length as GeneralizedTime
+        (0x04, "261111185911Z"), // not a time
+    ] {
+        assert_eq!(t(tag, bad), None, "{bad}");
+    }
+    // a certificate whose notAfter is not UTC has no validity (the exact-match trust refuses it)
+    let mut der = plcsim_der();
+    let pos = der.windows(13).position(|w| w == b"371110230000Z").expect("notAfter in the fixture");
+    der[pos + 12] = b'X';
+    assert_eq!(x509::validity(&der), None);
+    assert!(x509::validity(&plcsim_der()).is_some());
+}

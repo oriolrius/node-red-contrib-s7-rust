@@ -10,6 +10,7 @@ fuzz_target!(|data: &[u8]| {
     let _ = Dictionaries::new().decompress_blob(data, 0);
     // the PLC certificate (read before it is verified) and the endpoint settings
     let _ = s7plus::x509::parse(data);
+    let _ = s7plus::x509::validity(data);
     let _ = s7plus::CertVerify::fingerprints(&String::from_utf8_lossy(data));
     let _ = s7plus::CertVerify::trusted_pem(&String::from_utf8_lossy(data));
     // four parts: <len8> each for the first three, the rest is the string table
