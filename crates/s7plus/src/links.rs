@@ -5,7 +5,7 @@
 //! objects ("ASRoot.PLCProgram.<name>").
 
 use crate::client::{return_value, Client, Conn};
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::ids::{FN_GET_LINK, FN_GET_VARIABLES_ADDR};
 use crate::wire::{Reader, Writer};
 
@@ -24,32 +24,63 @@ pub fn program_object_path(name: &str) -> String {
     p
 }
 
-/// Decodes a GetLink response body: return value, count, RIDs (u32).
-pub(crate) fn decode_links(r: &mut Reader) -> Vec<u32> {
+/// Decodes a GetLink response body after the return value: count, RIDs
+/// (u32). A truncated response is an error, not a shorter list.
+pub(crate) fn decode_links(r: &mut Reader) -> Result<Vec<u32>> {
     let n = r.byte() as usize;
     let mut out = Vec::with_capacity(n);
     for _ in 0..n {
-        if !r.ok() {
-            break;
-        }
         out.push(r.u32());
     }
-    out
+    r.result()?;
+    if !r.ok() {
+        return Err(Error::proto("GetLink: truncated response"));
+    }
+    Ok(out)
 }
 
-/// Decodes a GetVariablesAddress response body after the return value:
-/// 0x05, count, then per element the RID (VLQ) and two u32; count 0 or no
-/// 0x05 = not found.
-pub(crate) fn decode_resolve(r: &mut Reader) -> Option<u32> {
-    if r.byte() != 0x05 || !r.ok() {
-        return None;
+/// A VLQ of at most 5 octets that must end (no continuation bit on the last
+/// octet) inside the buffer.
+fn strict_vlq32(r: &mut Reader) -> Result<u32> {
+    let mut v: u32 = 0;
+    for _ in 0..5 {
+        if r.left() == 0 {
+            return Err(Error::proto("resolve: truncated object id"));
+        }
+        let o = r.byte();
+        v = (v << 7) | (o & 0x7f) as u32;
+        if o & 0x80 == 0 {
+            return Ok(v);
+        }
     }
-    let n = r.byte();
-    if n == 0 || !r.ok() {
-        return None;
+    Err(Error::proto("resolve: object id longer than 5 octets"))
+}
+
+/// Decodes a GetVariablesAddress response body after the return value.
+/// Found: 0x05, count >= 1, then the RID (VLQ) and two u32 per element (the
+/// first element counts). Not found (PLCSIM): 0x01, 0x00. Anything else, or
+/// a truncated response, is an error.
+pub(crate) fn decode_resolve(r: &mut Reader) -> Result<Option<u32>> {
+    if r.left() < 2 {
+        return Err(Error::proto("resolve: truncated response"));
     }
-    let rid = r.vlq32();
-    (r.ok() && rid != 0).then_some(rid)
+    match (r.byte(), r.byte()) {
+        (0x05, 0) => Err(Error::proto("resolve: empty address list")),
+        (0x05, _) => {
+            let rid = strict_vlq32(r)?;
+            if r.left() < 8 {
+                return Err(Error::proto("resolve: truncated address element"));
+            }
+            r.u32();
+            r.u32();
+            if rid == 0 {
+                return Err(Error::proto("resolve: object id 0"));
+            }
+            Ok(Some(rid))
+        }
+        (0x01, 0x00) => Ok(None),
+        (a, b) => Err(Error::proto(format!("resolve: unexpected response {a:#04x} {b:#04x}"))),
+    }
 }
 
 impl Conn {
@@ -64,7 +95,7 @@ impl Conn {
         let m = self.call(ver, FN_GET_LINK, 0x34, w.b)?;
         let mut r = Reader::new(&m.body);
         return_value(&m, &mut r)?;
-        Ok(decode_links(&mut r))
+        decode_links(&mut r)
     }
 
     pub(crate) fn resolve_object(&mut self, path: &str) -> Result<Option<u32>> {
@@ -78,7 +109,7 @@ impl Conn {
         let m = self.call(ver, FN_GET_VARIABLES_ADDR, 0x34, w.b)?;
         let mut r = Reader::new(&m.body);
         return_value(&m, &mut r)?;
-        Ok(decode_resolve(&mut r))
+        decode_resolve(&mut r)
     }
 }
 
