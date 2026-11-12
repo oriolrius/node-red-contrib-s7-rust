@@ -352,7 +352,9 @@ impl S7Native {
                 d
             }
         };
+        let generation = SUB_GEN.fetch_add(1, Ordering::Relaxed);
         let cfg = SubCfg {
+            key: format!("{}#{generation}", p.sub),
             sub: p.sub.clone(),
             conn: p.conn.clone(),
             tags: Arc::new(p.tags.clone()),
@@ -523,8 +525,15 @@ fn worker(id: String, dev: Arc<dyn Device>, rx: Receiver<Msg>, status: StatusFn,
     status.call((id, "disconnected".into(), "closed".into()), ThreadsafeFunctionCallMode::NonBlocking);
 }
 
+/// Generation counter of the subscriptions: a re-subscribe with the same id
+/// gets a new PLC subscription key, so the cleanup of the old loop (which can
+/// still run after the new one starts) never touches the new one.
+static SUB_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 struct SubCfg {
     sub: String,
+    /// Key of the PLC subscription in the device: the id and the generation.
+    key: String,
     conn: String,
     tags: Arc<Vec<String>>,
     interval: Duration,
@@ -555,9 +564,9 @@ fn push_loop(c: &SubCfg, tx: &Sender<Msg>, stop: &AtomicBool, data: &DataFn) -> 
     while !stop.load(Ordering::SeqCst) {
         let start = Instant::now();
         let (rtx, rrx) = mpsc::sync_channel(1);
-        let (sub, tags) = (c.sub.clone(), c.tags.clone());
+        let (key, tags) = (c.key.clone(), c.tags.clone());
         let job: Job = Box::new(move |dev| {
-            let _ = rtx.send(dev.push_poll(&sub, &tags, cycle_ms, PUSH_WAIT));
+            let _ = rtx.send(dev.push_poll(&key, &tags, cycle_ms, PUSH_WAIT));
         });
         if tx.send(Msg::Job(job)).is_err() {
             return true;
@@ -591,8 +600,8 @@ fn push_loop(c: &SubCfg, tx: &Sender<Msg>, stop: &AtomicBool, data: &DataFn) -> 
             Err(_) => return false,
         }
     }
-    let sub = c.sub.clone();
-    let _ = tx.send(Msg::Job(Box::new(move |dev| dev.push_close(&sub))));
+    let key = c.key.clone();
+    let _ = tx.send(Msg::Job(Box::new(move |dev| dev.push_close(&key))));
     true
 }
 

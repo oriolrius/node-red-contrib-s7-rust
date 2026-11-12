@@ -121,3 +121,37 @@ test('S7CommPlus: status, browse and read through the addon', async () => {
     native.stop();
   }
 });
+
+// A re-subscribe with the same id and another tag list while a write and
+// notifications are in flight (review of #15): the old loop's poll and cleanup
+// must not use or delete the new PLC subscription.
+// timeout: with the bug the connection thread dies and the read never settles
+test('S7CommPlus: push re-subscribe with the same id and other tags', { timeout: 30000 }, async () => {
+  const addr = addon.startFakeS7Plus(false, true);
+  const { native, conn, ev } = await open('s7plus', addr);
+  try {
+    const long = ['Speed', '"Data_block_1".Int1'];
+    const short = ['Speed'];
+    let n = 0;
+    for (let i = 0; i < 20; i++) {
+      await native.subscribe({ conn, sub: 's', tags: long, intervalMs: 100, push: true });
+      await sleep(70);
+      native.write(conn, ['"Data_block_1".Int1'], [++n]).catch(() => {}); // not awaited
+      await native.subscribe({ conn, sub: 's', tags: short, intervalMs: 100, push: true });
+    }
+    const from = ev.data.length;
+    await native.write(conn, ['Speed'], [999]);
+    // the last subscription (one tag) sends the change; every event index is valid
+    await until(() => ev.data.slice(from).some((e) => e.sub === 's' && e.vals.includes(999)));
+    for (const e of ev.data.slice(from)) {
+      assert.ok(e.vals.length <= short.length && (e.idx || [0]).every((k) => k < short.length), JSON.stringify(e));
+    }
+    // the connection thread is alive, and one PLC subscription is left
+    assert.equal((await native.read(conn, ['Speed'])).vals[0], 999);
+    await until(() => addon.fakeS7PlusSubscriptions(addr) === 1);
+    native.unsubscribe('s');
+    await until(() => addon.fakeS7PlusSubscriptions(addr) === 0);
+  } finally {
+    native.stop();
+  }
+});

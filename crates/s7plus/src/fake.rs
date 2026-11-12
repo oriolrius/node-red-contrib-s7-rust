@@ -64,7 +64,7 @@ pub struct FakeState {
     /// The PAOM string sent in ServerSessionVersion 319.
     pub paom: String,
     /// The open client connections (see [`FakePlc::drop_connections`]).
-    conns: Vec<TcpStream>,
+    conns: Vec<(SocketAddr, TcpStream)>,
     /// Refuse a session without TLS, like PLCSIM Advanced V8 (FW S4.1).
     pub require_tls: bool,
     pub model: FakeModel,
@@ -151,11 +151,17 @@ impl FakePlc {
                     return;
                 }
                 let Ok(c) = c else { continue };
-                if let Ok(k) = c.try_clone() {
-                    lock(&st).conns.push(k);
+                let peer = c.peer_addr().ok();
+                if let (Some(p), Ok(k)) = (peer, c.try_clone()) {
+                    lock(&st).conns.push((p, k));
                 }
                 let (st, sp) = (st.clone(), sp.clone());
-                let _ = thread::Builder::new().name("s7plus-fake-conn".into()).spawn(move || serve(st, sp, c));
+                let _ = thread::Builder::new().name("s7plus-fake-conn".into()).spawn(move || {
+                    serve(st.clone(), sp, c);
+                    if let Some(p) = peer {
+                        lock(&st).conns.retain(|(a, _)| *a != p); // closed: drop the clone
+                    }
+                });
             }
         })?;
         Ok(FakePlc { addr, state, stop, accept: Some(accept) })
@@ -187,7 +193,7 @@ impl FakePlc {
     /// their subscriptions are gone.
     pub fn drop_connections(&self) {
         let mut st = self.lock();
-        for c in st.conns.drain(..) {
+        for (_, c) in st.conns.drain(..) {
             let _ = c.shutdown(std::net::Shutdown::Both);
         }
         st.model.subs.clear(); // dropping the senders stops the pumps

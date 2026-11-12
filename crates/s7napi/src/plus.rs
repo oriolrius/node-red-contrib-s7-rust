@@ -58,6 +58,8 @@ pub struct PlusDev {
 /// created again.
 struct PushSub {
     client: Arc<Client>,
+    /// The tag list of the subscription (another list subscribes again).
+    tags: Vec<String>,
     sub: Subscription,
     /// Reference id -> (index in the tag list, tag).
     refs: HashMap<u32, (usize, PTag)>,
@@ -363,7 +365,7 @@ impl PlusDev {
             return Err(PErr::Proto("no tag to subscribe".into()));
         }
         let sub = c.subscribe(&addrs, SubOptions { cycle_ms, name: "node-red-s7rs".into(), ..Default::default() })?;
-        Ok(PushSub { client: c.clone(), sub, refs, pending })
+        Ok(PushSub { client: c.clone(), tags: tags.to_vec(), sub, refs, pending })
     }
 }
 
@@ -561,8 +563,14 @@ impl Device for PlusDev {
     fn push_poll(&self, sub: &str, tags: &[String], cycle_ms: u32, wait: Duration) -> Result<Push, String> {
         let Some(c) = self.client.lock().unwrap().clone() else { return Ok(Push::Down) };
         let mut map = self.push.lock().unwrap();
-        if !map.get(sub).is_some_and(|p| Arc::ptr_eq(&p.client, &c)) {
-            map.remove(sub); // the subscription of a lost session is gone with it
+        if !map.get(sub).is_some_and(|p| Arc::ptr_eq(&p.client, &c) && p.tags == tags) {
+            // the subscription of a lost session is gone with it; another tag list
+            // needs a new one
+            if let Some(old) = map.remove(sub) {
+                if Arc::ptr_eq(&old.client, &c) {
+                    let _ = old.sub.close(&c);
+                }
+            }
             match self.push_create(&c, tags, cycle_ms) {
                 Ok(p) => {
                     map.insert(sub.to_string(), p);
@@ -586,7 +594,7 @@ impl Device for PlusDev {
             Ok(n) => {
                 ts = n.timestamp.map(|t| t.rfc3339_nano());
                 for (r, v) in &n.values {
-                    if let Some((i, pt)) = p.refs.get_mut(r) {
+                    if let Some((i, pt)) = p.refs.get_mut(r).filter(|(i, _)| *i < tags.len()) {
                         let (o, l) = decode_out(&tags[*i], pt, v);
                         if let Some(l) = l {
                             learned.push((tags[*i].clone(), l.clone()));
@@ -596,7 +604,7 @@ impl Device for PlusDev {
                     }
                 }
                 for (r, e) in &n.item_errors {
-                    if let Some((i, _)) = p.refs.get(r) {
+                    if let Some((i, _)) = p.refs.get(r).filter(|(i, _)| *i < tags.len()) {
                         out.push((*i, Out::bad(format!("{}: {}", tags[*i], PErr::Item(*e as u64)))));
                     }
                 }
