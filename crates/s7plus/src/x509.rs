@@ -199,6 +199,35 @@ pub fn parse(der: &[u8]) -> Option<CertInfo> {
     Some(info)
 }
 
+/// notBefore and notAfter of a DER certificate as Unix seconds.
+pub fn validity(der: &[u8]) -> Option<(u64, u64)> {
+    let i = parse(der)?;
+    Some((iso_secs(&i.not_before)?, iso_secs(&i.not_after)?))
+}
+
+/// "YYYY-MM-DDTHH:MM:SSZ" to Unix seconds.
+fn iso_secs(s: &str) -> Option<u64> {
+    let b = s.as_bytes();
+    if b.len() != 20 || !s.is_ascii() {
+        return None;
+    }
+    let n = |r: std::ops::Range<usize>| s.get(r)?.parse::<i64>().ok();
+    let (y, m, d) = (n(0..4)?, n(5..7)?, n(8..10)?);
+    let (hh, mm, ss) = (n(11..13)?, n(14..16)?, n(17..19)?);
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 60 {
+        return None;
+    }
+    // days from civil (H. Hinnant)
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    u64::try_from(days * 86400 + hh * 3600 + mm * 60 + ss).ok()
+}
+
 /// A DER certificate as PEM.
 pub fn pem(der: &[u8]) -> String {
     const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

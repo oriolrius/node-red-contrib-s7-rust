@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `s7 endpoint`, PLC certificate check *trusted certificate or project CA*: the PLC certificate
+  itself as trusted certificate (what *Use this certificate* copies) was refused when the CA of
+  the TIA project signed it ("is not signed by a trusted certificate"); it worked only for a
+  self-signed PLC certificate. Now the exact PLC certificate is accepted without its CA; the
+  validity dates and the name are still checked. Risk: none; before, the check refused the
+  connection, it did not accept a wrong certificate. Found on PLCSIM Advanced V8 with the
+  global security settings of TIA Portal V21 (certificate signed by the project CA).
+
 ## [1.2.1] - 2026-11-12
 
 ### Fixed

@@ -68,3 +68,10 @@ fn plcsim_certificate_trusted_by_itself() {
     let late = UnixTime::since_unix_epoch(std::time::Duration::from_secs(2_200_000_000)); // 2039
     assert!(verify_server_cert_signed_by_trust_anchor(&parsed, &roots, &[], late, algs).is_err());
 }
+
+#[test]
+fn validity_in_unix_seconds() {
+    let (from, until) = x509::validity(&plcsim_der()).unwrap();
+    assert_eq!(from, 1_794_423_551); // 2026-11-11T18:59:11Z
+    assert_eq!(until, 2_141_506_800); // 2037-11-10T23:00:00Z
+}
