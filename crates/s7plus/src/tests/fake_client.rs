@@ -644,7 +644,7 @@ fn certificate_verification_fake() {
     let e = refused(tls_dial(&f, CertVerify::fingerprints(&"00".repeat(32)).unwrap(), ""), "wrong fingerprint accepted");
     let t = e.to_string();
     assert!(
-        matches!(e, Error::Certificate(_)) && t.contains(&fp) && t.contains("does not match the fingerprint"),
+        e.refused_certificate() == Some(&der[..]) && t.contains(&fp) && t.contains("does not match the fingerprint"),
         "unexpected certificate error"
     );
     // the self-signed certificate as trusted certificate (SAN fake-plc, 127.0.0.1)

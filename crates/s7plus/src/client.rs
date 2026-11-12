@@ -641,8 +641,8 @@ impl Conn {
         let conn = rustls::ClientConnection::new(cfg, server_name(t, addr)).map_err(|e| Error::Tls(e.to_string()))?;
         self.link.set_deadline(Some(Instant::now() + self.timeout));
         if let Err(e) = self.link.start_tls(rustls::Connection::Client(conn)) {
-            if let Some(why) = ver.as_ref().and_then(|v| v.refused()) {
-                return Err(Error::Certificate(why));
+            if let Some((reason, cert)) = ver.as_ref().and_then(|v| v.refused()) {
+                return Err(Error::CertificateRefused { reason, cert });
             }
             return Err(Error::proto(format!("TLS: {e}")));
         }

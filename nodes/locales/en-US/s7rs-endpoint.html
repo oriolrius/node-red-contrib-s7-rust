@@ -30,7 +30,9 @@
   <p><i>Read from the PLC</i> shows the certificate of the deployed endpoint, and
     <i>Use this certificate</i> copies its fingerprint and PEM to the fields. Compare it with the
     certificate in TIA Portal before you trust it. When the check fails, the endpoint stays
-    disconnected and the error shows the fingerprint of the certificate it got.</p>
+    disconnected and the error shows the fingerprint of the certificate it got; <i>Read from the
+    PLC</i> then shows the refused certificate with a warning (for example after a new PLC
+    certificate).</p>
   <p>Some CPUs accept only TLS sessions (for example PLCSIM Advanced V8, FW S4.1). If the
     connection fails with "the PLC refused the session without TLS", turn on TLS.</p>
   <h4>Log</h4>

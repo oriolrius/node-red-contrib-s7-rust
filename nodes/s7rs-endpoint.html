@@ -53,13 +53,16 @@
         const out = $('#s7rs-cert-info').text(node._('s7rs-endpoint.cert.reading'));
         $.getJSON(`s7rs/call/${encodeURIComponent(node.id)}/certificate`)
           .done((c) => {
-            out.text(`${c.subject}\n${node._('s7rs-endpoint.cert.issuer')}: ${c.issuer}\n${c.notBefore} - ${c.notAfter}\n${(c.altNames || []).join(', ')}\nSHA-256 ${c.fingerprint}`);
+            const warn = c.refused ? `${node._('s7rs-endpoint.cert.refused')}\n${c.error}\n\n` : '';
+            out.text(`${warn}${c.subject}\n${node._('s7rs-endpoint.cert.issuer')}: ${c.issuer}\n${c.notBefore} - ${c.notAfter}\n${(c.altNames || []).join(', ')}\nSHA-256 ${c.fingerprint}`);
+            out.css('color', c.refused ? 'var(--red-ui-text-color-error, #d00)' : '');
             $('#s7rs-cert-use').show().off('click').on('click', () => {
               $('#node-config-input-certFingerprint').val(c.fingerprint);
               $('#node-config-input-certTrusted').val(c.pem);
             });
           })
           .fail((x) => {
+            out.css('color', '');
             out.text((x.responseJSON && x.responseJSON.error) || node._('s7rs-endpoint.cert.notDeployed'));
             $('#s7rs-cert-use').hide();
           });

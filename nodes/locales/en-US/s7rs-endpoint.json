@@ -39,7 +39,8 @@
       "use": "Use this certificate",
       "reading": "reading…",
       "issuer": "issuer",
-      "notDeployed": "deploy the endpoint with TLS first"
+      "notDeployed": "deploy the endpoint with TLS first",
+      "refused": "NOT TRUSTED by the check of the deployed endpoint. Compare it with the certificate in TIA Portal before you use it."
     },
     "link": {
       "default": "CPU default",

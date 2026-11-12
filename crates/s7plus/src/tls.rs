@@ -251,7 +251,7 @@ pub(crate) struct PlcCertVerifier {
     provider: Arc<CryptoProvider>,
     verify: CertVerify,
     roots: RootCertStore,
-    refused: Mutex<Option<String>>,
+    refused: Mutex<Option<(String, Vec<u8>)>>,
 }
 
 impl PlcCertVerifier {
@@ -265,8 +265,8 @@ impl PlcCertVerifier {
         PlcCertVerifier { provider: provider(), verify, roots, refused: Mutex::new(None) }
     }
 
-    /// The reason of the last refusal.
-    pub(crate) fn refused(&self) -> Option<String> {
+    /// The reason of the last refusal and the refused certificate (DER).
+    pub(crate) fn refused(&self) -> Option<(String, Vec<u8>)> {
         self.refused.lock().ok()?.clone()
     }
 
@@ -347,7 +347,7 @@ impl ServerCertVerifier for PlcCertVerifier {
             Ok(()) => Ok(ServerCertVerified::assertion()),
             Err(why) => {
                 if let Ok(mut r) = self.refused.lock() {
-                    *r = Some(why);
+                    *r = Some((why, ee.to_vec()));
                 }
                 Err(rustls::Error::InvalidCertificate(CertificateError::ApplicationVerificationFailure))
             }
