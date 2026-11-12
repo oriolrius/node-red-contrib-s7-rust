@@ -13,8 +13,24 @@
     (S7-300: slot 2; S7-1200/1500: slot 1). With TSAPs set, rack and slot are not used.</p>
   <p>Gap: tags in the same area and DB that are closer than N bytes are read as one block.</p>
   <h4>S7CommPlus</h4>
-  <p>Symbols are resolved once per session (a reconnect resolves them again). The PLC
-    certificate is not verified. The password is stored as a Node-RED credential.</p>
+  <p>Symbols are resolved once per session (a reconnect resolves them again). The password is
+    stored as a Node-RED credential.</p>
+  <h4>PLC certificate (TLS)</h4>
+  <p>Without a check, TLS protects only against passive capture: a device between Node-RED and
+    the PLC can show its own certificate. Set one of these checks:</p>
+  <ul>
+    <li><b>pinned fingerprint</b>: the SHA-256 of the PLC certificate. More fingerprints,
+      separated by commas, allow a change of the certificate.</li>
+    <li><b>trusted certificate or project CA</b>: the PLC certificate in PEM (exported from
+      TIA Portal: device configuration, Protection &amp; Security, certificate manager), or the
+      CA of the project when the project CA signs the PLC certificates. The certificate must be
+      valid now and contain the certificate name: by default the host (the S7-1500 puts its IP
+      addresses in the certificate). Set the name when Node-RED uses another address (NAT).</li>
+  </ul>
+  <p><i>Read from the PLC</i> shows the certificate of the deployed endpoint, and
+    <i>Use this certificate</i> copies its fingerprint and PEM to the fields. Compare it with the
+    certificate in TIA Portal before you trust it. When the check fails, the endpoint stays
+    disconnected and the error shows the fingerprint of the certificate it got.</p>
   <p>Some CPUs accept only TLS sessions (for example PLCSIM Advanced V8, FW S4.1). If the
     connection fails with "the PLC refused the session without TLS", turn on TLS.</p>
   <h4>Log</h4>

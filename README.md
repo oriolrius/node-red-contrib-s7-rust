@@ -79,12 +79,12 @@ Then restart Node-RED. The nodes are in the **network** category of the palette.
 
 | Node | Function |
 |---|---|
-| `s7 endpoint` (config) | One PLC connection: protocol, host, port. S7comm: CPU family, rack/slot or TSAPs, PDU, gap, byte order. S7CommPlus: remote TSAP, TLS, user, password (stored as a credential). |
+| `s7 endpoint` (config) | One PLC connection: protocol, host, port. S7comm: CPU family, rack/slot or TSAPs, PDU, gap, byte order. S7CommPlus: remote TSAP, TLS and the check of the PLC certificate, user, password (stored as a credential). |
 | `s7 read` | Reads tags when a message arrives. Output: one value, `{tag: value}` or an array. |
 | `s7 write` | Writes the tag of the node, the tag in `msg.topic`, or `msg.payload = {tag: value, …}` in one request. |
 | `s7 watch` | Sends only the changes. Mode "read cyclically": a Rust thread reads the tags at an interval, with an optional conditional rate ("Fast while" a tag is true). Mode "PLC subscription" (S7CommPlus): the PLC sends the changes. |
 | `s7 alarms` | S7CommPlus: a message when a PLC alarm comes or goes (alarm subscription; the active alarms at start). |
-| `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `dbs`, `browse`, `alarms`, `limits`. |
+| `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `certificate`, `dbs`, `browse`, `alarms`, `limits`. |
 
 Every node has full help in the editor sidebar. Bad tags never stop the other tags: they give
 `null` and an entry in `msg.s7.errors`, or `msg.quality = "bad"` in a watch.
@@ -141,7 +141,7 @@ This map shows each protocol function and where it is available. It is strict: a
 | Connection | TPKT + COTP, remote TSAP `SIMATIC-ROOT-HMI`, protocol version 1 for the session creation, version 2 after it | ✅ | `s7 endpoint` |
 | Session | CreateObject 0x04CA (ClientSession), session setup with SetMultiVariables, DeleteObject 0x04D4 at close | ✅ | `s7 endpoint` |
 | TLS 1.3 | InitSsl 0x05B3, TLS inside COTP | ✅ | `s7 endpoint` (option "TLS") |
-| PLC certificate verification | — | ❌ | — (TLS protects against passive capture only) |
+| PLC certificate verification | pinned SHA-256 fingerprint, or chain to a trusted certificate (the PLC certificate or the TIA project CA) with validity and name (IP address or DNS name) | ✅ | `s7 endpoint` (option "PLC certificate"), `s7 info`: `certificate` |
 | Legitimation (access level password) | challenge from GetVarSubStreamed 0x0586, legacy and new response | ✅ | `s7 endpoint` (password) |
 | Read | GetMultiVariables 0x054C, symbolic and absolute addresses | ✅ | `s7 read`, `s7 watch` |
 | Write | SetMultiVariables 0x0542, symbolic and absolute addresses | ✅ | `s7 write` |
@@ -176,6 +176,19 @@ access level password, set it in the endpoint. TLS needs S7-1500 FW ≥ 2.9 or S
 Some CPUs accept only TLS sessions (PLCSIM Advanced V8 with FW S4.1, or a CPU with "Only allow
 secure PG/PC and HMI communication"): without TLS the connection fails with "the PLC refused the
 session without TLS". Turn on TLS in the endpoint.
+
+**PLC certificate**: without a check, TLS protects only against passive capture (a device between
+Node-RED and the PLC can show its own certificate). In the endpoint, set "PLC certificate" to:
+
+- *pinned fingerprint*: the SHA-256 of the PLC certificate (more than one, separated by commas,
+  for a change of certificate);
+- *trusted certificate or project CA*: the PLC certificate in PEM, exported from TIA Portal, or
+  the CA of the project. The certificate must be valid now and contain the host (the S7-1500
+  puts its IP addresses in it); set "Certificate name" when Node-RED uses another address.
+
+*Read from the PLC* in the endpoint editor (or `s7 info` action `certificate`) shows the
+certificate of the deployed endpoint: compare it with TIA Portal before you trust it. When the
+check fails, the endpoint stays disconnected and the error shows the fingerprint it got.
 
 ## Addresses
 
@@ -266,7 +279,8 @@ S7-1200 on the same LAN).
 - `s7 watch`, mode "PLC subscription": the cycle time is the interval (100 ms or more; S7-1500
   FW V4.x sends no changes without a cycle time). Each subscription uses one of the PLC
   subscription resources (`s7 info` → `limits`); when the PLC refuses it, the node reads cyclically.
-- S7CommPlus: the PLC certificate is not verified (TLS protects against passive capture only).
+- S7CommPlus: the PLC certificate is not verified by default (TLS then protects against passive
+  capture only); set "PLC certificate" in the endpoint. No revocation check (CRL / OCSP).
 
 ## Migration from @oriolrius/node-red-contrib-s7
 

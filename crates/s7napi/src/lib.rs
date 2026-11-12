@@ -83,6 +83,14 @@ pub struct OpenParams {
     /// "SIMATIC-ROOT-HMI" (default) or "SIMATIC-ROOT-ES"
     pub tsap: Option<String>,
     pub tls: Option<bool>,
+    /// Check of the PLC certificate (TLS): "none" (default), "fingerprint"
+    /// (certFingerprint: SHA-256, one or more) or "trusted" (certTrusted:
+    /// PEM certificates, the PLC certificate or the project CA).
+    pub cert_verify: Option<String>,
+    pub cert_fingerprint: Option<String>,
+    pub cert_trusted: Option<String>,
+    /// Name for the check of "trusted" (and SNI); empty = the host.
+    pub cert_name: Option<String>,
     pub password: Option<String>,
     pub username: Option<String>,
 }
@@ -800,6 +808,14 @@ mod fakes {
         let a = f.addr();
         KEEP.lock().unwrap().push(Box::new(f));
         Ok(a)
+    }
+
+    /// The TLS certificate (PEM) of the fake S7CommPlus PLC at `addr`.
+    #[napi]
+    pub fn fake_s7plus_certificate(addr: String) -> Option<String> {
+        let keep = KEEP.lock().unwrap();
+        let f = keep.iter().filter_map(|b| b.downcast_ref::<s7plus::fake::FakePlc>()).find(|f| f.addr() == addr)?;
+        f.tls_cert().map(|d| s7plus::x509::pem(&d))
     }
 
     /// Closes every client connection of the fake S7CommPlus PLC at `addr`.

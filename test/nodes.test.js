@@ -301,3 +301,55 @@ test('admin API: status and read-only actions', async () => {
   await http.get('/s7rs/call/ep/setClock').expect(400);
   await http.get('/s7rs/status/nope').expect(404);
 });
+
+test('S7CommPlus: check of the PLC certificate (TLS)', async () => {
+  const addr = fakes.startFakeS7Plus(true);
+  const [host, port] = addr.split(':');
+  const pem = fakes.fakeS7PlusCertificate(addr);
+  assert.match(pem, /^-----BEGIN CERTIFICATE-----\n/);
+
+  // no check: the certificate action shows the certificate to pin
+  await load({ protocol: 's7plus', host, port, tls: true }, [{ id: 'i', type: 's7rs-info', action: 'certificate' }]);
+  const cert = (await ask('i', {})).payload;
+  assert.equal(cert.pem, pem);
+  assert.equal(cert.check, 'none');
+  assert.match(cert.fingerprint, /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+  assert.match(cert.subject, /CN=PLC-1\/Communication-1/);
+  assert.deepEqual(cert.altNames, ['DNS:fake-plc', 'IP:127.0.0.1']);
+  const http = helper.request();
+  assert.equal((await http.get('/s7rs/call/ep/certificate').expect(200)).body.fingerprint, cert.fingerprint);
+  await helper.unload();
+  stopAll();
+
+  // pinned fingerprint and trusted certificate: connected
+  const ep = await load({ protocol: 's7plus', host, port, tls: true, certVerify: 'fingerprint', certFingerprint: cert.fingerprint.toLowerCase() }, []);
+  assert.match(ep.state.detail, /TLS/);
+  await helper.unload();
+  stopAll();
+  await load({ protocol: 's7plus', host, port, tls: true, certVerify: 'trusted', certTrusted: pem }, [{ id: 'i', type: 's7rs-info', action: 'info' }]);
+  const info = (await ask('i', {})).payload;
+  assert.equal(info.certificateCheck, 'trusted');
+  assert.equal(info.certificateFingerprint, cert.fingerprint);
+  await helper.unload();
+  stopAll();
+
+  // another fingerprint: the endpoint stays disconnected and names the fingerprint it got
+  await helper.load(NODES, [
+    { id: 'ep', type: 's7rs-endpoint', protocol: 's7plus', host, port, tls: true, timeout: 2000, certVerify: 'fingerprint', certFingerprint: '00'.repeat(32) },
+  ]);
+  const bad = helper.getNode('ep');
+  await bad.ready;
+  await until(() => bad.state.state === 'faulted' && /fingerprint/.test(bad.state.detail));
+  assert.ok(bad.state.detail.includes(cert.fingerprint), bad.state.detail);
+  await helper.unload();
+  stopAll();
+
+  // a certificate check without TLS, or a bad fingerprint, is a configuration error
+  for (const cfg of [{ certVerify: 'fingerprint', certFingerprint: cert.fingerprint }, { tls: true, certVerify: 'fingerprint', certFingerprint: 'AB:CD' }]) {
+    await helper.load(NODES, [{ id: 'ep', type: 's7rs-endpoint', protocol: 's7plus', host, port, ...cfg }]);
+    const n = helper.getNode('ep');
+    await assert.rejects(n.ready, cfg.tls ? /SHA-256 fingerprint/ : /needs TLS/);
+    await helper.unload();
+    stopAll();
+  }
+});

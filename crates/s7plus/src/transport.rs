@@ -242,6 +242,12 @@ impl Link {
         Ok(tls)
     }
 
+    /// The PLC certificate (DER) of the TLS session.
+    pub fn peer_certificate(&self) -> Option<Vec<u8>> {
+        let st = self.tls.as_ref()?;
+        st.conn.peer_certificates()?.first().map(|c| c.to_vec())
+    }
+
     /// TLS exporter (RFC 8446 §7.5) with an empty context.
     pub fn export_keying_material(&self, label: &[u8], n: usize) -> Option<Vec<u8>> {
         let st = self.tls.as_ref()?;

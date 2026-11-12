@@ -15,7 +15,9 @@ use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use serde_json::{json, Value as J};
 
 use s7::{Stats, Val};
-use s7plus::{AreaItem, Client, Error as PErr, ItemAddress, Options, PlcValue, SubOptions, Subscription, TlsOptions, Value as PValue};
+use s7plus::{
+    AreaItem, CertVerify, Client, Error as PErr, ItemAddress, Options, PlcValue, SubOptions, Subscription, TlsOptions, Value as PValue,
+};
 
 use crate::device::{emit_log, AlarmPush, Device, Out, Push};
 use crate::{LogFn, OpenParams, OpenResult, StatusFn};
@@ -31,6 +33,8 @@ struct Cfg {
     tsap: String,
     timeout: Duration,
     tls: bool,
+    verify: CertVerify,
+    cert_name: String,
     password: String,
     username: String,
     attempts: usize,
@@ -67,6 +71,26 @@ struct PushSub {
     refs: HashMap<u32, (usize, PTag)>,
     /// Tags that do not resolve: sent with the first poll.
     pending: Vec<(usize, Out)>,
+}
+
+/// The certificate check of the open parameters.
+fn cert_verify(p: &OpenParams) -> Result<CertVerify, String> {
+    let e = |e: PErr| e.to_string().trim_start_matches("s7plus: TLS: ").to_string();
+    match p.cert_verify.as_deref().unwrap_or("none") {
+        "" | "none" => Ok(CertVerify::None),
+        "fingerprint" => CertVerify::fingerprints(p.cert_fingerprint.as_deref().unwrap_or("")).map_err(e),
+        "trusted" => CertVerify::trusted_pem(p.cert_trusted.as_deref().unwrap_or("")).map_err(e),
+        x => Err(format!("certVerify {x:?}: use none, fingerprint or trusted")),
+    }
+}
+
+fn cert_json(der: &[u8], check: &str) -> J {
+    let i = s7plus::x509::parse(der).unwrap_or_default();
+    json!({
+        "subject": i.subject, "issuer": i.issuer, "notBefore": i.not_before, "notAfter": i.not_after,
+        "altNames": i.alt_names, "fingerprint": s7plus::fingerprint_text(&s7plus::fingerprint(der)),
+        "selfSigned": i.self_signed, "ca": i.ca, "check": check, "pem": s7plus::x509::pem(der),
+    })
 }
 
 fn transport(e: &PErr) -> bool {
@@ -140,11 +164,17 @@ impl PlusDev {
         let port = p.port.unwrap_or(102);
         let addr =
             if p.host.contains(':') && !p.host.starts_with('[') { format!("[{}]:{port}", p.host) } else { format!("{}:{port}", p.host) };
+        let verify = cert_verify(&p)?;
+        if verify != CertVerify::None && !p.tls.unwrap_or(false) {
+            return Err("the check of the PLC certificate needs TLS: turn on TLS".into());
+        }
         let cfg = Cfg {
             addr: addr.clone(),
             tsap: p.tsap.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "SIMATIC-ROOT-HMI".into()),
             timeout: Duration::from_millis(p.timeout_ms.filter(|x| *x > 0).unwrap_or(5000) as u64),
             tls: p.tls.unwrap_or(false),
+            verify,
+            cert_name: p.cert_name.clone().map(|s| s.trim().to_string()).unwrap_or_default(),
             password: p.password.clone().unwrap_or_default(),
             username: p.username.clone().unwrap_or_default(),
             attempts: p.attempts.filter(|x| *x > 0).unwrap_or(2) as usize,
@@ -184,7 +214,8 @@ impl PlusDev {
         o.password = self.cfg.password.clone();
         o.username = self.cfg.username.clone();
         if self.cfg.tls {
-            o.tls = Some(TlsOptions { config: None, key_log: None, server_name: String::new() });
+            o.tls =
+                Some(TlsOptions { config: None, key_log: None, server_name: self.cfg.cert_name.clone(), verify: self.cfg.verify.clone() });
         }
         if let Some(f) = &self.log {
             let (f, id, max) = (f.clone(), self.id.clone(), self.cfg.level);
@@ -513,7 +544,7 @@ impl Device for PlusDev {
         }
     }
 
-    /// Actions: status, info, cpuState, limits, dbs, browse, alarms {all}.
+    /// Actions: status, info, certificate, cpuState, limits, dbs, browse, alarms {all}.
     /// RUN/STOP is not exposed.
     fn call(&self, action: &str, a: &J) -> Result<J, String> {
         let e = |e: PErr| e.to_string();
@@ -534,8 +565,16 @@ impl Device for PlusDev {
                 let l = c.limits();
                 json!({
                     "paom": i.paom(), "protocolVersion": i.protocol_ver, "tls": i.tls, "initSslRefused": i.init_ssl_refused,
-                    "session": i.session, "limits": limits_json(&l),
+                    "session": i.session, "limits": limits_json(&l), "certificateCheck": self.cfg.verify.mode(),
+                    "certificateFingerprint": i.peer_cert.as_deref().map(|d| s7plus::fingerprint_text(&s7plus::fingerprint(d))),
                 })
+            }
+            "certificate" => {
+                let c = self.client().map_err(e)?;
+                match c.info().peer_cert.as_deref() {
+                    Some(der) => cert_json(der, self.cfg.verify.mode()),
+                    None => return Err("the session has no TLS: turn on TLS in the endpoint".into()),
+                }
             }
             "cpuState" => {
                 let s = self.run(|c| c.operating_state()).map_err(e)?;
@@ -569,7 +608,7 @@ impl Device for PlusDev {
                 let l = self.run(|c| c.active_alarms(all)).map_err(e)?;
                 J::Array(l.iter().map(alarm_json).collect())
             }
-            x => return Err(format!("unknown action {x:?} for s7plus (status, info, cpuState, limits, dbs, browse, alarms)")),
+            x => return Err(format!("unknown action {x:?} for s7plus (status, info, certificate, cpuState, limits, dbs, browse, alarms)")),
         })
     }
 

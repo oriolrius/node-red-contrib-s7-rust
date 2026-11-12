@@ -39,6 +39,7 @@ pub(crate) mod transport;
 pub mod typeinfo;
 pub mod value;
 pub mod wire;
+pub mod x509;
 
 #[cfg(feature = "fake")]
 pub mod fake;
@@ -62,5 +63,6 @@ pub use plcvalue::{decode_plc, decode_plc_ts, encode_plc, format_plc, PlcValue, 
 pub use subscribe::{decode_notification, Notification, SubOptions, Subscription};
 pub use tags::{area_address, db_area, AreaItem, ItemResult, AREA_DB, AREA_FLAGS, AREA_INPUTS, AREA_OUTPUTS};
 pub use textfmt::DateTime;
-pub use tls::{NssKeyLog, SharedBuf, TlsOptions};
+pub use tls::{fingerprint, fingerprint_text, CertVerify, NssKeyLog, SharedBuf, TlsOptions};
 pub use value::{Struct, Value, V};
+pub use x509::CertInfo;

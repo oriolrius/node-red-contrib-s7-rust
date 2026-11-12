@@ -2,6 +2,7 @@
 //! against the fake PLC. Tests that need the fake PLC model run with
 //! `--features fake`.
 
+mod cert;
 mod codec;
 mod golden;
 mod tagdescr;
