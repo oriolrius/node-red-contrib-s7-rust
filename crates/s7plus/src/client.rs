@@ -575,7 +575,14 @@ impl Conn {
         let m = self.call(1, FN_CREATE_OBJECT, 0x36, w.b).map_err(|e| Error::proto(format!("CreateObject session: {e}")))?;
         let mut r = Reader::new(&m.body);
         let rv = r.vlq64();
-        if rv & 0x4000_0000_0000_0000 != 0 {
+        if rv & 0x4000_0000_0000_0000 != 0 || (rv as i64) < 0 {
+            if o.tls.is_none() && !init_ssl_refused {
+                // e.g. PLCSIM Advanced V8 / S7-1500 FW V4.x: 0xa201d6000214fdf8
+                return Err(Error::proto(format!(
+                    "the PLC refused the session without TLS (CreateObject returned {rv:#x}); \
+                     it supports TLS and probably requires it: enable TLS on the endpoint"
+                )));
+            }
             return Err(Error::Return { function: FN_CREATE_OBJECT, ret: rv });
         }
         let n = r.byte();

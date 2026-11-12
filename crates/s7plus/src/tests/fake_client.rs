@@ -356,6 +356,27 @@ fn legacy_legitimation_fake() {
 }
 
 #[test]
+fn session_without_tls_refused_fake() {
+    // PLCSIM Advanced V8 (FW S4.1) accepts InitSsl but refuses a session
+    // without TLS with a negative return value and no session id.
+    let f = FakePlc::start().unwrap();
+    f.enable_tls().unwrap();
+    {
+        let mut s = f.lock();
+        s.paom = "1;6ES7 SIM-01500-APLC;S4.1".into();
+        s.require_tls = true;
+    }
+    let r = Client::connect(Options { addr: f.addr(), timeout: Duration::from_secs(2), ..Default::default() });
+    let e = match r {
+        Ok(_) => panic!("session without TLS accepted"),
+        Err(e) => e.to_string(),
+    };
+    assert!(e.contains("without TLS") && e.contains("0xa201d6000214fdf8") && e.contains("enable TLS"), "error: {e}");
+    let c = dial(&f, Options { tls: Some(TlsOptions::default()), ..Default::default() });
+    assert!(c.info().tls);
+}
+
+#[test]
 fn tls_and_new_legitimation_fake() {
     let f = FakePlc::start().unwrap();
     f.enable_tls().unwrap();
