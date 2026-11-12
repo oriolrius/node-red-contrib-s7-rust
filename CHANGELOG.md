@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `test/plcsim/`: the PLCSIM Advanced test program (SIMATIC SD documents of the DBs, the alarm FB
+  and OB1), how to load it with TIA Portal (Openness MCP), and two manual live-test scripts
+  (`s7 watch` push/poll, `s7 alarms`). `npm test` does not use them.
+
 - `s7 alarms` node (S7CommPlus): one message per PLC alarm event (`msg.state` coming / going,
   `msg.topic` the alarm id, `msg.payload` times, associated values, priority, class, texts). At
   start, and again after a reconnect, it sends the active alarms (`msg.initial`). The status shows

@@ -1,0 +1,25 @@
+﻿{
+    S7_Optimized := "TRUE";
+    S7_StandardRetain := "FALSE";
+    S7_Version := "0.1"
+}
+DATA_BLOCK TestOpt
+    VAR
+        bFlag : Bool;
+        iCount : Int;
+        diBig : DInt;
+        rTemp : Real;
+        lrPrecise : LReal;
+        wBits : Word;
+        sText : String[32];
+    END_VAR
+
+    bFlag := TRUE;
+    iCount := 1234;
+    diBig := -100000;
+    rTemp := 21.5;
+    lrPrecise := 3.14159265358979;
+    wBits := 16#BEEF;
+    sText := 'hello s7rs';
+
+END_DATA_BLOCK

@@ -1,0 +1,18 @@
+﻿{
+    S7_EditorMode := "SCL";
+    S7_Optimized := "TRUE";
+    S7_Version := "0.1"
+}
+FUNCTION_BLOCK "AlarmGen"
+    VAR
+        alReq : Program_Alarm;
+        alAuto : Program_Alarm;
+    END_VAR
+
+    { S7_Language := "SCL" }
+    NETWORK
+           // alReq: a client sets "TestSub".alarmReq; alAuto: comes and goes every 5 s
+           #alReq(SIG := "TestSub".alarmReq, SD_1 := "TestSub".alarmVal);
+           #alAuto(SIG := ("TestSub".slow MOD 2) = 1, SD_1 := "TestSub".tick);
+    END_NETWORK
+END_FUNCTION_BLOCK
