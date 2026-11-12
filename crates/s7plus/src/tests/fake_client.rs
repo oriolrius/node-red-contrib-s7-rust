@@ -643,19 +643,22 @@ fn certificate_verification_fake() {
     assert!(tls_dial(&f, CertVerify::fingerprints(&fp).unwrap(), "").is_ok());
     let e = refused(tls_dial(&f, CertVerify::fingerprints(&"00".repeat(32)).unwrap(), ""), "wrong fingerprint accepted");
     let t = e.to_string();
-    assert!(matches!(e, Error::Certificate(_)) && t.contains(&fp) && t.contains("does not match the fingerprint"), "{t}");
+    assert!(
+        matches!(e, Error::Certificate(_)) && t.contains(&fp) && t.contains("does not match the fingerprint"),
+        "unexpected certificate error"
+    );
     // the self-signed certificate as trusted certificate (SAN fake-plc, 127.0.0.1)
     let pem = crate::x509::pem(&der);
     assert!(tls_dial(&f, CertVerify::trusted_pem(&pem).unwrap(), "").is_ok());
     assert!(tls_dial(&f, CertVerify::trusted_pem(&pem).unwrap(), "fake-plc").is_ok());
     let e = refused(tls_dial(&f, CertVerify::trusted_pem(&pem).unwrap(), "other-plc"), "wrong name accepted").to_string();
-    assert!(e.contains("not valid for this name") && e.contains("other-plc"), "{e}");
+    assert!(e.contains("not valid for this name") && e.contains("other-plc"), "unexpected certificate error");
     // another certificate as trusted certificate
     let other = FakePlc::start().unwrap();
     other.enable_tls().unwrap();
     let pem2 = crate::x509::pem(&other.tls_cert().unwrap());
     let e = refused(tls_dial(&f, CertVerify::trusted_pem(&pem2).unwrap(), ""), "untrusted accepted").to_string();
-    assert!(e.contains("not signed by a trusted certificate") && e.contains("CN=PLC-1/Communication-1"), "{e}");
+    assert!(e.contains("not signed by a trusted certificate") && e.contains("CN=PLC-1/Communication-1"), "unexpected certificate error");
 }
 
 #[test]
@@ -669,5 +672,5 @@ fn certificate_signed_by_project_ca_fake() {
     assert!(crate::x509::parse(&ca).unwrap().ca);
     // the name check uses the address when no name is set: a DNS name fails
     let e = refused(tls_dial(&f, CertVerify::trusted_pem(&ca_pem).unwrap(), "plc.local"), "accepted").to_string();
-    assert!(e.contains("not valid for this name"), "{e}");
+    assert!(e.contains("not valid for this name"), "unexpected certificate error");
 }
