@@ -264,6 +264,32 @@ test('S7CommPlus: s7 alarms (FW V4 fake)', async () => {
   await until(() => fakes.fakeS7PlusSubscriptions(addr) === 0);
 });
 
+// review of #17: an alarm that goes while the PLC is not reachable must not stay
+// in the active count after the reconnect (the new list is empty)
+test('S7CommPlus: s7 alarms forgets alarms that went during a reconnect', async () => {
+  const addr = fakes.startFakeS7Plus(false, true);
+  const [host, port] = addr.split(':');
+  await load({ protocol: 's7plus', host, port }, [{ id: 'al', type: 's7rs-alarms' }]);
+  const node = helper.getNode('al');
+  let status = '';
+  const orig = node.status.bind(node);
+  node.status = (s) => {
+    if (s && / active$/.test(s.text)) status = s.text; // not the connection state texts
+    return orig(s);
+  };
+  const got = collect('al');
+  await until(() => got.some((m) => m.initial)); // alarm A of the fake
+  const a = got.find((m) => m.initial).topic;
+  fakes.fakeS7PlusDropConnections(addr);
+  fakes.fakeS7PlusRaiseAlarm(addr, a, false); // A goes while the node is not connected
+  await until(() => fakes.fakeS7PlusSubscriptions(addr) === 1, 15000); // subscribed again
+  await until(() => status === '0 active');
+  const b = '0x8a0e000500010000';
+  fakes.fakeS7PlusRaiseAlarm(addr, b, true, [[1, 1, 0, 0], [0, 1]]);
+  await until(() => got.some((m) => m.topic === b && m.state === 'coming'));
+  assert.equal(status, '1 active');
+});
+
 test('admin API: status and read-only actions', async () => {
   const [host, port] = fakes.startFakeS7(960).split(':');
   await load({ host, port, cpu: '1500' }, []);

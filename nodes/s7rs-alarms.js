@@ -17,7 +17,8 @@ module.exports = function (RED) {
 
     const onAlarms = (ev) => {
       if (ev.sub !== node.id) return;
-      if (ev.alarms.some((a) => a.initial)) active.clear(); // a new (re)subscription lists them again
+      // a new subscription (start or reconnect): the alarms that went meanwhile are gone
+      if (ev.snapshot) active.clear();
       for (const a of ev.alarms) {
         if (a.state === 'coming') active.set(a.id, a);
         else active.delete(a.id);

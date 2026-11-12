@@ -22,7 +22,9 @@
   <h3>Details</h3>
   <p>At start, and again after a reconnect, the node subscribes to the alarms of the CPU and
     (option) sends the active alarms with <code>msg.initial</code>. Then one message per alarm
-    event. The node status shows the number of active alarms.</p>
+    event. The node status shows the number of active alarms; it starts again from the PLC list on
+    each new subscription (alarms that went while the PLC was not reachable are gone). Without "send
+    the active alarms at start" it counts only the alarms that came since the last subscription.</p>
   <h4>Subscription</h4>
   <p>The CPU families need different subscription layouts. <b>automatic</b> uses the TIA Portal layout
     for an S7-1200 and the S7CommPlusDriver layout for the other CPUs (an S7-1500 FW V4.x accepts the

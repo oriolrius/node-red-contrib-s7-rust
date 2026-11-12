@@ -52,7 +52,7 @@ pub struct DataEv {
     vals: Vec<(usize, Out)>,
     ts: String,
     ms: f64,
-    /// Alarm events (JSON array text) of an alarm subscription; no values then.
+    /// Alarm events of an alarm subscription, JSON text {snapshot, alarms}; no values then.
     alarms: Option<String>,
 }
 
@@ -397,7 +397,9 @@ impl S7Native {
     }
 
     /// subscribeAlarms({conn, sub, initial, layout}): S7CommPlus alarm events
-    /// as data events with `alarms` (JSON array text). Stop with unsubscribe(sub).
+    /// as data events with `alarms` (JSON text {snapshot, alarms}; snapshot =
+    /// a new subscription, first or after a reconnect, with the active alarms
+    /// when `initial`). Stop with unsubscribe(sub).
     #[napi]
     pub fn subscribe_alarms(&self, p: AlarmParams) -> napi::Result<()> {
         if p.sub.is_empty() {
@@ -662,7 +664,7 @@ fn alarm_loop(sub: String, conn: String, key: String, cfg: serde_json::Value, tx
         }
         let Ok(r) = rrx.recv() else { return };
         match r {
-            Ok(device::AlarmPush::Alarms(list)) => {
+            Ok(device::AlarmPush::Alarms(list, snapshot)) => {
                 if stop.load(Ordering::SeqCst) {
                     break;
                 }
@@ -673,7 +675,7 @@ fn alarm_loop(sub: String, conn: String, key: String, cfg: serde_json::Value, tx
                     vals: Vec::new(),
                     ts: device::rfc3339_now(),
                     ms: start.elapsed().as_secs_f64() * 1000.0,
-                    alarms: Some(serde_json::Value::Array(list).to_string()),
+                    alarms: Some(serde_json::json!({"snapshot": snapshot, "alarms": list}).to_string()),
                 };
                 if data.call(ev, ThreadsafeFunctionCallMode::Blocking) != napi::Status::Ok {
                     break;

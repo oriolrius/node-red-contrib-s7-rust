@@ -623,9 +623,9 @@ impl Device for PlusDev {
                     return Err(e.to_string());
                 }
             }
-            if !out.is_empty() {
-                return Ok(AlarmPush::Alarms(out)); // the active alarms first
-            }
+            // the snapshot of the new subscription, also when it is empty (after
+            // a reconnect the alarms that went meanwhile are gone)
+            return Ok(AlarmPush::Alarms(out, true));
         }
         let (_, sub) = map.get_mut(key).expect("alarm subscription");
         match sub.next(&c, wait) {
@@ -639,7 +639,7 @@ impl Device for PlusDev {
             }
             Err(e) => emit_log(&self.log, &self.id, "warn", format!("alarm notification: {e}")),
         }
-        Ok(if out.is_empty() { AlarmPush::Idle } else { AlarmPush::Alarms(out) })
+        Ok(if out.is_empty() { AlarmPush::Idle } else { AlarmPush::Alarms(out, false) })
     }
 
     fn alarm_close(&self, key: &str) {

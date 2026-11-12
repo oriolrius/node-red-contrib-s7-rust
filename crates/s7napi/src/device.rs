@@ -38,8 +38,10 @@ pub enum Push {
 
 /// One poll of a PLC alarm subscription (S7CommPlus).
 pub enum AlarmPush {
-    /// Alarm events (JSON objects, see `plus::alarm_json`).
-    Alarms(Vec<J>),
+    /// Alarm events (JSON objects, see `plus::alarm_json`). `true`: a
+    /// snapshot of a new subscription (the active alarms, maybe none): the
+    /// receiver forgets the alarms it knew.
+    Alarms(Vec<J>, bool),
     /// No notification in the wait time.
     Idle,
     /// No connection: the caller waits (not on the connection thread) and tries again.
