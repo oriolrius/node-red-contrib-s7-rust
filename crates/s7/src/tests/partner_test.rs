@@ -64,3 +64,28 @@ fn wrong_tsap_is_refused() {
     o.remote_tsap = 0x1002;
     assert!(Partner::connect(&o).is_err());
 }
+
+#[test]
+fn pending_blocks_are_bounded() {
+    use crate::partner::MAX_PENDING;
+    let f = FakePartnerPlc::start(480);
+    let mut p = Partner::connect(&opts(f.addr())).unwrap();
+    // the PLC sends while only send() runs (no recv): the queue keeps the newest blocks
+    for i in 0..(MAX_PENDING + 20) {
+        assert!(f.bsend(1, vec![(i % 256) as u8]));
+    }
+    std::thread::sleep(Duration::from_millis(200));
+    for _ in 0..40 {
+        p.send(2, &[0]).unwrap();
+    }
+    let t0 = Instant::now();
+    while p.dropped() < 20 && t0.elapsed() < Duration::from_secs(10) {
+        p.send(2, &[0]).unwrap();
+    }
+    assert!(p.dropped() >= 20, "dropped {}", p.dropped());
+    let mut n = 0;
+    while p.recv(Duration::from_millis(50)).unwrap().is_some() {
+        n += 1;
+    }
+    assert!(n <= MAX_PENDING, "{n}");
+}

@@ -186,9 +186,17 @@ fn serve(mut s: TcpStream, pdu: u16, st: &Arc<Mutex<State>>, rx: Receiver<Block>
                 my_ref = my_ref.wrapping_add(1);
                 let p = [0x00, 0x01, 0x12, 0x08, 0x12, 0x46, 0x01, seq, id_seq, if last { 0 } else { 1 }, 0x00, 0x00];
                 s.write_all(&userdata(my_ref, &p, &d))?;
-                // wait for the acknowledgement of this fragment
+                // wait for the acknowledgement of this fragment; a BSEND of the
+                // partner in between goes to the BRCV (a PLC serves both)
                 s.set_read_timeout(Some(Duration::from_secs(3)))?;
-                let ack = read_tpkt(&mut s)?;
+                let ack = loop {
+                    let f = read_tpkt(&mut s)?;
+                    if f.len() > 18 && f[4] == 0x07 && f[18] == 0x46 {
+                        brcv(&mut s, &f, st, &mut rx_block)?;
+                        continue;
+                    }
+                    break f;
+                };
                 s.set_read_timeout(Some(Duration::from_millis(20)))?;
                 if ack.len() < 25 || ack[18] != 0x86 || u16::from_be_bytes([ack[7], ack[8]]) != my_ref || (multi && ack[20] != id_seq) {
                     st.lock().unwrap().errors.push(format!("bad BSEND acknowledgement {:02x?}", ack));
@@ -208,37 +216,43 @@ fn serve(mut s: TcpStream, pdu: u16, st: &Arc<Mutex<State>>, rx: Receiver<Block>
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
             Err(e) => return Err(e),
         };
-        // a BSEND of the partner: BRCV
-        if f.len() < 25 || f[4] != 0x07 || f[18] != 0x46 {
-            continue;
-        }
-        let pref = u16::from_be_bytes([f[7], f[8]]);
-        let plen = u16::from_be_bytes([f[9], f[10]]) as usize;
-        let p = &f[13..13 + plen];
-        let d = &f[13 + plen..];
-        let (seq, id_seq, eos) = (p[7], p[8], p[9]);
-        let len = u16::from_be_bytes([d[2], d[3]]) as usize;
-        let r_id = u32::from_be_bytes([d[8], d[9], d[10], d[11]]);
-        let first = seq == 0;
-        let payload = if first { &d[14..4 + len] } else { &d[12..4 + len] };
-        let refused = st.lock().unwrap().refuse == Some(r_id);
-        if first {
-            rx_block = Some(Block { r_id, data: Vec::new() });
-        }
-        if let Some(b) = rx_block.as_mut() {
-            b.data.extend_from_slice(payload);
-        }
-        let ack_seq = if id_seq != 0 { id_seq } else { 0x31 };
-        let err: u16 = if refused { 0x0001 } else { 0 };
-        let e = err.to_be_bytes();
-        let ap = [0x00, 0x01, 0x12, 0x08, 0x12, 0x86, 0x01, ack_seq, 0x00, 0x00, e[0], e[1]];
-        s.write_all(&userdata(pref, &ap, &[0x0A, 0x00, 0x00, 0x00]))?;
-        if eos == 0 || refused {
-            if let Some(b) = rx_block.take() {
-                if !refused {
-                    st.lock().unwrap().received.push(b);
-                }
+        brcv(&mut s, &f, st, &mut rx_block)?;
+    }
+}
+
+/// One BSEND fragment of the partner: store it, acknowledge it like an
+/// S7-1500 (IDSeq as sequence, the PDU reference of the request).
+fn brcv(s: &mut TcpStream, f: &[u8], st: &Arc<Mutex<State>>, rx_block: &mut Option<Block>) -> std::io::Result<()> {
+    if f.len() < 25 || f[4] != 0x07 || f[18] != 0x46 {
+        return Ok(());
+    }
+    let pref = u16::from_be_bytes([f[7], f[8]]);
+    let plen = u16::from_be_bytes([f[9], f[10]]) as usize;
+    let p = &f[13..13 + plen];
+    let d = &f[13 + plen..];
+    let (seq, id_seq, eos) = (p[7], p[8], p[9]);
+    let len = u16::from_be_bytes([d[2], d[3]]) as usize;
+    let r_id = u32::from_be_bytes([d[8], d[9], d[10], d[11]]);
+    let first = seq == 0;
+    let payload = if first { &d[14..4 + len] } else { &d[12..4 + len] };
+    let refused = st.lock().unwrap().refuse == Some(r_id);
+    if first {
+        *rx_block = Some(Block { r_id, data: Vec::new() });
+    }
+    if let Some(b) = rx_block.as_mut() {
+        b.data.extend_from_slice(payload);
+    }
+    let ack_seq = if id_seq != 0 { id_seq } else { 0x31 };
+    let err: u16 = if refused { 0x0001 } else { 0 };
+    let e = err.to_be_bytes();
+    let ap = [0x00, 0x01, 0x12, 0x08, 0x12, 0x86, 0x01, ack_seq, 0x00, 0x00, e[0], e[1]];
+    s.write_all(&userdata(pref, &ap, &[0x0A, 0x00, 0x00, 0x00]))?;
+    if eos == 0 || refused {
+        if let Some(b) = rx_block.take() {
+            if !refused {
+                st.lock().unwrap().received.push(b);
             }
         }
     }
+    Ok(())
 }

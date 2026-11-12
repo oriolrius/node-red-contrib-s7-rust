@@ -49,7 +49,12 @@ pub struct Partner {
     next: u8,
     rx: Option<Rx>,
     done: VecDeque<Block>,
+    dropped: u64,
 }
+
+/// Received blocks kept until [`Partner::recv`] takes them; older ones are
+/// dropped (see [`Partner::dropped`]).
+pub const MAX_PENDING: usize = 256;
 
 /// A parsed userdata BSEND/BRCV frame.
 struct Frame<'a> {
@@ -96,7 +101,12 @@ impl Partner {
     /// Connects to the PLC (COTP with `local_tsap` / `remote_tsap` of the S7
     /// connection) and negotiates the PDU.
     pub fn connect(o: &DialOptions) -> Result<Partner> {
-        Ok(Partner { conn: Conn::dial(o)?, next: 0, rx: None, done: VecDeque::new() })
+        Ok(Partner { conn: Conn::dial(o)?, next: 0, rx: None, done: VecDeque::new(), dropped: 0 })
+    }
+
+    /// Received blocks dropped because more than [`MAX_PENDING`] waited.
+    pub fn dropped(&self) -> u64 {
+        self.dropped
     }
 
     /// The negotiated PDU size.
@@ -125,18 +135,22 @@ impl Partner {
             return Err(io(format!("bad BSEND data header ({} bytes)", d.len())));
         }
         let len = u16::from_be_bytes([d[2], d[3]]) as usize;
+        if d.len() < 4 + len {
+            self.rx = None;
+            return Err(io(format!("BSEND fragment: {} bytes announced, {} present", len, d.len().saturating_sub(4))));
+        }
         let r_id = u32::from_be_bytes([d[8], d[9], d[10], d[11]]);
         let first = self.rx.is_none() || seq_in == 0;
         let (payload, total) = if first {
             if d.len() < 14 || len < 10 {
                 return Err(io("short first BSEND fragment"));
             }
-            (&d[14..(4 + len).min(d.len())], u16::from_be_bytes([d[12], d[13]]) as usize)
+            (&d[14..4 + len], u16::from_be_bytes([d[12], d[13]]) as usize)
         } else {
             if len < 8 {
                 return Err(io("short BSEND fragment"));
             }
-            (&d[12..(4 + len).min(d.len())], 0)
+            (&d[12..4 + len], 0)
         };
         if first {
             let seq_out = if id_seq != 0 { id_seq } else { self.next_byte() };
@@ -155,6 +169,11 @@ impl Partner {
             let rx = self.rx.take().expect("receive state");
             if rx.total != 0 && rx.total != rx.data.len() {
                 return Err(io(format!("BSEND block: {} bytes announced, {} received", rx.total, rx.data.len())));
+            }
+            if self.done.len() >= MAX_PENDING {
+                // nobody calls recv(): keep the newest blocks
+                self.done.pop_front();
+                self.dropped += 1;
             }
             self.done.push_back(Block { r_id: rx.r_id, data: rx.data });
         }

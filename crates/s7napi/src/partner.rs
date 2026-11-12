@@ -42,7 +42,15 @@ fn unhex(s: &str) -> Result<Vec<u8>, String> {
     if !s.len().is_multiple_of(2) {
         return Err("bsend: data must be hex with an even length".into());
     }
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| "bsend: data is not hex".to_string())).collect()
+    let digit = |c: u8| -> Result<u8, String> {
+        match c {
+            b'0'..=b'9' => Ok(c - b'0'),
+            b'a'..=b'f' => Ok(c - b'a' + 10),
+            b'A'..=b'F' => Ok(c - b'A' + 10),
+            _ => Err("bsend: data is not hex".to_string()),
+        }
+    };
+    s.as_bytes().chunks(2).map(|p| Ok(digit(p[0])? << 4 | digit(p[1])?)).collect()
 }
 
 impl PartnerDev {
@@ -253,3 +261,17 @@ impl Device for PartnerDev {
 }
 
 use s7::Val;
+
+#[cfg(test)]
+mod tests {
+    use super::unhex;
+
+    #[test]
+    fn unhex_rejects_non_hex_without_panic() {
+        assert_eq!(unhex("00ff10").unwrap(), vec![0, 255, 16]);
+        assert_eq!(unhex("ABcd").unwrap(), vec![0xab, 0xcd]);
+        for bad in ["0", "zz", "é0", "0é", "€€", "0x00"] {
+            assert!(unhex(bad).is_err(), "{bad:?}");
+        }
+    }
+}
