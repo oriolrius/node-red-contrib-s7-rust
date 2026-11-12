@@ -6,8 +6,10 @@ use std::net::{TcpListener, TcpStream};
 
 use super::h;
 use crate::blob::{compress_with_dictionary, Dictionaries};
-use crate::browse::{array_access_id, array_indexes};
+use crate::browse::{array_access_id, array_indexes, db_optimized};
+use crate::ids::CLASS_TYPE_INFO;
 use crate::legit::*;
+use crate::object::Object;
 use crate::plcvalue::*;
 use crate::softdt::*;
 use crate::stream::{Pdu, Reassembler};
@@ -400,4 +402,46 @@ fn formatting_helpers() {
     assert_eq!(DateTime::from_civil(1969, 12, 31, 0, 0, 0, 0).unix_secs, -86400);
     let e = Error::Item(0x13);
     assert_eq!(e.to_string(), "s7plus: item error 0x13");
+}
+
+// Vartype elements of two DBs from PLCSIM Advanced V8 (CPU 1513-1 PN, FW S4.1):
+// "TestAbs" (standard) and "TestOpt" (optimized) both have flags 0x8ac0, so
+// the optimized-access flag is set in both. Only the standard DB has the
+// classic bit (0x08) in the bit-offset info (issue #10).
+#[test]
+fn db_optimized_fw4() {
+    let el = |sdt: u8, bit_info: u8, opt: u32, non: u32| Vartype {
+        softdatatype: sdt,
+        flags: 0x8ac0,
+        bit_info,
+        offset: OffsetInfo { kind: OI_STD, opt_addr: opt, non_opt_addr: non, ..Default::default() },
+        ..Default::default()
+    };
+    let std_db = VartypeList {
+        first_id: 9,
+        elems: vec![el(SDT_BYTE, 0x08, 0, 0), el(SDT_INT, 0x08, 2, 2), el(SDT_REAL, 0x08, 8, 8), el(SDT_BOOL, 0x08, 12, 12)],
+    };
+    let opt_db = VartypeList {
+        first_id: 9,
+        elems: vec![el(SDT_BBOOL, 0, 28, 0), el(SDT_INT, 0, 24, 2), el(SDT_LREAL, 0, 8, 12), el(SDT_WORD, 0, 26, 20)],
+    };
+    assert!(std_db.elems.iter().all(|e| e.optimized() && e.classic()));
+    let ti = |vt: &VartypeList| {
+        let mut o = Object::new(0x9200_0001, CLASS_TYPE_INFO);
+        o.vartypes = Some(vt.clone());
+        o
+    };
+    assert!(!db_optimized(&ti(&std_db)), "standard DB on FW V4.x reported as optimized");
+    assert!(db_optimized(&ti(&opt_db)), "optimized DB on FW V4.x not reported as optimized");
+    // Older firmware: no optimized-access flag in a standard DB, classic only on Bools.
+    let mut old_std = std_db.clone();
+    for e in &mut old_std.elems {
+        e.flags &= !VT_OPTIMIZED;
+        if e.softdatatype != SDT_BOOL {
+            e.bit_info = 0;
+        }
+    }
+    assert!(!db_optimized(&ti(&old_std)));
+    assert!(!db_optimized(&ti(&VartypeList { first_id: 9, elems: vec![] })), "empty DB");
+    assert!(!db_optimized(&Object::new(0x9200_0001, CLASS_TYPE_INFO)), "no vartypes");
 }

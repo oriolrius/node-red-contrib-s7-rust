@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format follows
   the PLC supports TLS, says: "the PLC refused the session without TLS … enable TLS on the
   endpoint" (#11). The fake PLC models this PLC, and goes on in plain text when a client
   skips TLS after InitSsl.
+- S7CommPlus: `dbs` reported a standard DB as `optimized: true` on S7-1500 FW V4.x (PLCSIM
+  Advanced, FW S4.1), and the symbols of that DB got no classic absolute address. This
+  firmware sets the optimized-access flag in standard DBs too. A DB with classic elements
+  (bit-offset info 0x08) is now a standard DB (#10). The fake PLC can send FW V4.x flags.
 
 ## [1.0.4] - 2026-11-08
 

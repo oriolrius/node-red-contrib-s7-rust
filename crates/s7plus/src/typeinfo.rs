@@ -270,8 +270,16 @@ pub struct Vartype {
 }
 
 impl Vartype {
+    /// The optimized-access attribute flag. S7-1500 FW V4.x (PLCSIM S4.1)
+    /// sets it on the elements of standard DBs too: use [`classic`](Self::classic)
+    /// to tell a standard block.
     pub fn optimized(&self) -> bool {
         self.flags & VT_OPTIMIZED != 0
+    }
+
+    /// The element has a classic (standard block) layout.
+    pub fn classic(&self) -> bool {
+        self.bit_info & BOI_CLASSIC != 0
     }
 
     pub fn section(&self) -> u32 {

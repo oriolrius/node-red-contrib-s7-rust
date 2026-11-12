@@ -106,3 +106,33 @@ fn classic_for_addresses() {
         assert_eq!(classic_for(prefix, &var), want, "{prefix} {var:?}");
     }
 }
+
+// The Bools of tag descriptions always have the classic bit; the block
+// attribute decides (review of #10: FW V3 optimized DBs stay optimized).
+#[test]
+fn tag_descr_db_optimized() {
+    assert!(crate::browse::db_optimized(&td_object(0x9200_000a, TD_DB_OPT)), "FW V3 optimized DB");
+    assert!(!crate::browse::db_optimized(&td_object(0x9200_000b, TD_DB_STD)), "FW V3 standard DB");
+}
+
+// The FW V3 captures as the fake's DB1 (optimized) and DB2 (standard): `dbs`
+// and the classic address map follow the block attribute.
+#[cfg(feature = "fake")]
+#[test]
+fn tag_descr_dbs_fake() {
+    use crate::fake::{FakePlc, TI_DB1, TI_DB2};
+    use crate::{Client, Options};
+    let f = FakePlc::start().unwrap();
+    {
+        let mut st = f.lock();
+        st.model.types.insert(TI_DB1, td_object(TI_DB1, TD_DB_OPT));
+        st.model.types.insert(TI_DB2, td_object(TI_DB2, TD_DB_STD));
+    }
+    let c = Client::connect(Options { addr: f.addr(), timeout: std::time::Duration::from_secs(2), ..Default::default() }).unwrap();
+    let dbs = c.list_datablocks(true).unwrap();
+    assert!(dbs.len() == 2 && dbs[0].optimized && !dbs[1].optimized, "dbs {dbs:?}");
+    let m = c.classic_addresses(&["\"Data_block_1\".i", "\"Data_block_1\".b", "\"Std_DB\".i", "\"Std_DB\".b"]).unwrap();
+    assert!(!m.contains_key("\"Data_block_1\".i") && !m.contains_key("\"Data_block_1\".b"), "optimized DB mapped: {m:?}");
+    assert_eq!(m.get("\"Std_DB\".i").map(|s| s.as_str()), Some("DB2.DBW4:int"), "{m:?}");
+    assert_eq!(m.get("\"Std_DB\".b").map(|s| s.as_str()), Some("DB2.DBX0.0"), "{m:?}");
+}

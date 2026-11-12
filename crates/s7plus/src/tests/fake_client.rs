@@ -241,6 +241,19 @@ fn browse_and_symbolic_fake() {
     assert!(!m.contains_key("\"Data_block_1\".Int1"), "optimized DB mapped");
 }
 
+// S7-1500 FW V4.x sets the optimized-access flag in standard DBs too (#10).
+#[test]
+fn fw4_standard_db_fake() {
+    let f = FakePlc::start().unwrap();
+    f.lock().model.use_fw4_flags();
+    let c = dial(&f, Options::default());
+    let dbs = c.list_datablocks(true).unwrap();
+    assert!(dbs.len() == 2 && dbs[0].optimized && !dbs[1].optimized, "dbs {dbs:?}");
+    let m = c.classic_addresses(&["\"Std_DB\".Bit", "\"Data_block_1\".Int1"]).unwrap();
+    assert_eq!(m.get("\"Std_DB\".Bit").map(|s| s.as_str()), Some("DB2.DBX2.3"));
+    assert!(!m.contains_key("\"Data_block_1\".Int1"), "optimized DB mapped");
+}
+
 #[test]
 fn subscription_fake() {
     let f = FakePlc::start().unwrap();

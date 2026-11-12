@@ -1177,6 +1177,22 @@ impl FakeModel {
         md
     }
 
+    /// Vartype flags as S7-1500 FW V4.x (PLCSIM S4.1) sends them: the
+    /// optimized-access flag on the elements of every DB, and the classic
+    /// bit on every element of a standard DB.
+    pub fn use_fw4_flags(&mut self) {
+        for rid in [TI_DB1, TI_DB2] {
+            let Some(vt) = self.types.get_mut(&rid).and_then(|o| o.vartypes.as_mut()) else { continue };
+            let standard = !vt.elems.iter().any(|e| e.optimized());
+            for e in &mut vt.elems {
+                e.flags |= VT_OPTIMIZED;
+                if standard {
+                    e.bit_info |= BOI_CLASSIC;
+                }
+            }
+        }
+    }
+
     fn fill(&mut self, base: &ItemAddress, vars: &[Vt]) {
         for v in vars {
             let a = base.child(v.lid);
