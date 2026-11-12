@@ -79,8 +79,8 @@ pub fn decode_notification(body: &[u8]) -> Result<Notification> {
 pub(crate) fn decode_notification_layout(body: &[u8], layout: u8) -> Result<Notification> {
     let mut r = Reader::new(body);
     let mut n = Notification { subscription_id: r.u32(), ..Default::default() };
-    for i in 0..3 {
-        n.unknown[i] = r.u16();
+    for u in n.unknown.iter_mut() {
+        *u = r.u16();
     }
     n.credit_tick = r.byte();
     n.seq = r.vlq32();
