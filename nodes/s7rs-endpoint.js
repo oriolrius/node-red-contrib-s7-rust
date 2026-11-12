@@ -9,7 +9,7 @@ const { text, intOrUndef } = require('../lib/common');
 // Diagnostics the editor may call through the admin API (read-only actions).
 const ADMIN_ACTIONS = new Set([
   'identify', 'cpuState', 'szl', 'szlList', 'clock', 'blocks', 'listBlocks', 'blockInfo',
-  'info', 'certificate', 'limits', 'dbs', 'browse', 'alarms',
+  'info', 'certificate', 'limits', 'dbs', 'browse', 'alarms', 'links', 'resolve',
 ]);
 
 module.exports = function (RED) {

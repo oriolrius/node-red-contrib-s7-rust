@@ -40,6 +40,17 @@ All notable changes to this project are documented here. The format follows
   with the hardware configuration; the TIA Portal MCP loads the software only) and
   `live_partner.js`. Tested on PLCSIM Advanced V8 (S7-1500, FW S4.1): 16 and 1800 bytes both
   ways.
+- `s7 info` (S7CommPlus), read only, also in the admin API:
+  - `resolve {name}`: the object id (RID) of a DB, FB, FC, OB or technology object by its name,
+    asked to the PLC (GetVariablesAddress 0x0590 with the object path
+    `ASRoot.PLCProgram.<name>`, as TIA Portal does for technology objects); `{path}` takes any
+    object path (`"ASRoot"`, `"ASRoot.PLCProgram"`). `rid` is null when the PLC has no such
+    object.
+  - `links {rid, aid}`: the objects that a relation of an object points to (GetLink 0x0524), for
+    example rid 8, aid 2667: the active alarm instances.
+- Rust crate `s7plus`: `Client::resolve_object`, `Client::get_links`, `program_object_path`. The
+  request and response layouts were found on PLCSIM Advanced V8 (S7-1500, FW S4.1); the fake PLC
+  answers both with the PLCSIM bytes.
 
 ## [1.2.2] - 2026-11-12
 

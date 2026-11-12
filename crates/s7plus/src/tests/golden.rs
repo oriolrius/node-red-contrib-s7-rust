@@ -283,3 +283,24 @@ fn nesting_limit() {
     Value::decode(&mut r);
     assert!(r.err.is_none() && r.left() == 0, "{:?} left {}", r.err, r.left());
 }
+
+/// GetVariablesAddress and GetLink responses of PLCSIM Advanced V8 (FW S4.1).
+#[test]
+fn links_and_resolve_responses() {
+    use crate::links::{decode_links, decode_resolve};
+    use crate::wire::Reader;
+    // "ASRoot.PLCProgram.TestSub" -> DB4 (after the return value 0x2036800000eb0013)
+    let found = h("908dd0808083d68013050188d0b880040000000100000001d08dd1808081c3ffe0000600000000");
+    let mut r = Reader::new(&found);
+    assert_eq!(r.vlq64(), 0x2036_8000_00eb_0013);
+    assert_eq!(decode_resolve(&mut r), Some(0x8a0e_0004));
+    let missing = h("00010000000600000000");
+    let mut r = Reader::new(&missing);
+    assert_eq!(r.vlq64(), 0);
+    assert_eq!(decode_resolve(&mut r), None);
+    // GetLink(alarm subsystem, itsUpdateRelevantDAI) with one active alarm
+    let links = h("00017200701f0600000000");
+    let mut r = Reader::new(&links);
+    assert_eq!(r.vlq64(), 0);
+    assert_eq!(decode_links(&mut r), vec![0x7200_701f]);
+}

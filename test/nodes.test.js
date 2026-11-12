@@ -490,3 +490,18 @@ test('S7 partner: s7 brcv and s7 bsend (BSEND/BRCV)', async () => {
   await until(() => one.length === 2, 15000);
   assert.deepEqual([...one[1].payload], [7]);
 });
+
+test('S7CommPlus: s7 info resolve and links', async () => {
+  const [host, port] = fakes.startFakeS7Plus().split(':');
+  await load({ protocol: 's7plus', host, port }, [{ id: 'i', type: 's7rs-info', action: 'resolve' }]);
+  assert.deepEqual((await ask('i', { payload: { name: 'Data_block_1' } })).payload, { path: 'ASRoot.PLCProgram.Data_block_1', rid: '0x8a0e0001' });
+  assert.equal((await ask('i', { payload: { name: 'Nope' } })).payload.rid, null);
+  assert.equal((await ask('i', { payload: { path: 'ASRoot.PLCProgram' } })).payload.rid, '0x00000003');
+  const l = (await ask('i', { action: 'links', payload: { rid: 8, aid: '2667' } })).payload;
+  assert.deepEqual(l.links, ['0x10000006']);
+  await assert.rejects(ask('i', { action: 'links', payload: { rid: 8 } }), /aid missing/);
+  await assert.rejects(ask('i', { action: 'resolve', payload: {} }), /name/);
+  // read only: the admin API allows both
+  const http = helper.request();
+  assert.equal((await http.get('/s7rs/call/ep/resolve?name=Data_block_1').expect(200)).body.rid, '0x8a0e0001');
+});
