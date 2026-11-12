@@ -200,6 +200,42 @@ test('S7CommPlus: absolute and symbolic tags, info, watch', async () => {
   await until(() => watched.some((m) => m.payload === 8));
 });
 
+test('S7CommPlus: watch with a PLC subscription (FW V4 fake)', async () => {
+  const addr = fakes.startFakeS7Plus(false, true);
+  const [host, port] = addr.split(':');
+  await load({ protocol: 's7plus', host, port }, [
+    { id: 'w', type: 's7rs-write', tag: '' },
+    { id: 'wa', type: 's7rs-watch', tags: '"Data_block_1".Int1\nSpeed\n"Data_block_1".Nope', mode: 'push', interval: 100, output: 'each' },
+  ]);
+  const watched = collect('wa');
+  // the first notification has every tag; an unknown symbol is a bad tag
+  await until(() => watched.some((m) => m.topic === 'Speed') && watched.some((m) => m.topic.endsWith('Nope')));
+  assert.equal(watched.find((m) => m.topic.endsWith('Nope')).quality, 'bad');
+  assert.equal(fakes.fakeS7PlusSubscriptions(addr), 1, 'no PLC subscription (polling?)');
+  await ask('w', { payload: { Speed: 4321 } });
+  await until(() => watched.some((m) => m.topic === 'Speed' && m.payload === 4321));
+  // the PLC restarts: the node reconnects and subscribes again
+  fakes.fakeS7PlusDropConnections(addr);
+  await until(() => fakes.fakeS7PlusSubscriptions(addr) === 1, 15000);
+  await ask('w', { payload: { Speed: 55 } });
+  await until(() => watched.some((m) => m.topic === 'Speed' && m.payload === 55));
+  // the node deletes its subscription on close
+  await helper.unload();
+  await until(() => fakes.fakeS7PlusSubscriptions(addr) === 0);
+});
+
+test('S7comm: watch mode push falls back to cyclic reads', async () => {
+  const [host, port] = fakes.startFakeS7(960).split(':');
+  await load({ host, port, cpu: '1500' }, [
+    { id: 'w', type: 's7rs-write', tag: '' },
+    { id: 'wa', type: 's7rs-watch', tags: 'MW60:int', mode: 'push', interval: 50, output: 'each' },
+  ]);
+  const watched = collect('wa');
+  await until(() => watched.length === 1);
+  await ask('w', { topic: 'MW60:int', payload: 9 });
+  await until(() => watched.some((m) => m.payload === 9));
+});
+
 test('admin API: status and read-only actions', async () => {
   const [host, port] = fakes.startFakeS7(960).split(':');
   await load({ host, port, cpu: '1500' }, []);

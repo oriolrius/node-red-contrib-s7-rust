@@ -1,6 +1,7 @@
 'use strict';
-// s7rs-watch: a Rust thread reads the tags at a fixed (or conditional) rate and
-// the node sends only the values that changed.
+// s7rs-watch: a Rust thread reads the tags at a fixed (or conditional) rate, or
+// (mode push, S7CommPlus) a PLC subscription sends the changes; the node sends
+// only the values that changed.
 
 const { text, parseTags, getEndpoint } = require('../lib/common');
 
@@ -53,6 +54,8 @@ module.exports = function (RED) {
       // conditional rate: while condTag is true (or non-zero), read every condInterval ms
       condTag: String(config.condTag || '').trim() || undefined,
       condIntervalMs: Number(config.condInterval) || 100,
+      // PLC subscription with the interval as cycle time (falls back to cyclic reads)
+      push: config.mode === 'push',
     };
     ep.ready
       .then(() => ep.bridge.subscribe(params))

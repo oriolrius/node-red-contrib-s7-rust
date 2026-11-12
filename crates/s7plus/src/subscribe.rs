@@ -176,7 +176,9 @@ impl fmt::Display for Notification {
 /// Subscription options.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SubOptions {
-    /// Cycle time (ms); 0 = on change only.
+    /// Cycle time (ms): the PLC checks the items each cycle and sends the
+    /// changes. 0 = on change only (S7-1200 FW V3); the S7-1500 FW V4.x then
+    /// sends only the first notification, so give it a cycle time (≥ 100 ms).
     pub cycle_ms: u32,
     /// -1 = unlimited; >0 = credits renewed by the client (default 10).
     pub credit_limit: i16,

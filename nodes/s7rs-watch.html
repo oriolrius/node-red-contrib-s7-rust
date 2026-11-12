@@ -12,6 +12,7 @@
       topic: { value: '' },
       condTag: { value: '' },
       condInterval: { value: 100, validate: RED.validators.number(true) },
+      mode: { value: 'poll' },
     },
     inputs: 0,
     outputs: 1,
@@ -19,7 +20,16 @@
     paletteLabel: 's7 watch',
     label: function () {
       const n = (this.tags || '').split('\n').filter((s) => s.trim()).length;
-      return this.name || `s7 watch (${n} @ ${this.interval} ms)`;
+      const how = this.mode === 'push' ? 'sub' : '@';
+      return this.name || `s7 watch (${n} ${how} ${this.interval} ms)`;
+    },
+    oneditprepare: function () {
+      // a PLC subscription has no conditional rate and sends changes only
+      $('#node-input-mode')
+        .on('change', function () {
+          $('.s7rs-watch-poll').toggle($(this).val() !== 'push');
+        })
+        .trigger('change');
     },
     outputLabels: function () {
       return this._('s7rs-watch.portLabel.out');
@@ -42,15 +52,22 @@
       data-i18n="[placeholder]s7rs-watch.placeholder.tags"></textarea>
   </div>
   <div class="form-row">
+    <label for="node-input-mode"><i class="fa fa-exchange"></i> <span data-i18n="s7rs-watch.label.mode"></span></label>
+    <select id="node-input-mode">
+      <option value="poll" data-i18n="s7rs-watch.mode.poll"></option>
+      <option value="push" data-i18n="s7rs-watch.mode.push"></option>
+    </select>
+  </div>
+  <div class="form-row">
     <label for="node-input-interval"><i class="fa fa-clock-o"></i> <span data-i18n="s7rs-watch.label.interval"></span></label>
     <input type="text" id="node-input-interval" style="width: 80px" />
   </div>
-  <div class="form-row">
+  <div class="form-row s7rs-watch-poll">
     <label for="node-input-condTag"><i class="fa fa-bolt"></i> <span data-i18n="s7rs-watch.label.condTag"></span></label>
     <input type="text" id="node-input-condTag" data-i18n="[placeholder]s7rs-watch.placeholder.condTag" style="width: 45%; font-family: monospace" />
     <input type="text" id="node-input-condInterval" style="width: 60px" /> ms
   </div>
-  <div class="form-row">
+  <div class="form-row s7rs-watch-poll">
     <label for="node-input-onChange">&nbsp;</label>
     <input type="checkbox" id="node-input-onChange" style="width: auto; display: inline-block" />
     <span data-i18n="s7rs-watch.label.onChange"></span>

@@ -104,6 +104,10 @@ pub struct SubParams {
     /// Conditional rate: while this tag is true (or non-zero), read every condIntervalMs.
     pub cond_tag: Option<String>,
     pub cond_interval_ms: Option<u32>,
+    /// S7CommPlus: a PLC subscription with cycle time intervalMs; the PLC sends
+    /// the changes. Falls back to cyclic reads when the PLC refuses it.
+    /// onChange and the conditional rate do not apply.
+    pub push: Option<bool>,
 }
 
 #[napi(object)]
@@ -153,7 +157,8 @@ impl ToNapiValue for DataEv {
         let (vals, errs) = columns(&env, ev.vals.iter().map(|(_, r)| r))?;
         o.set_named_property("vals", vals)?;
         o.set_named_property("errs", errs)?;
-        if ev.vals.len() != ev.total {
+        // without idx the values are the tags 0..n in order
+        if ev.vals.len() != ev.total || ev.vals.iter().enumerate().any(|(k, (i, _))| k != *i) {
             o.set_named_property("idx", ev.vals.iter().map(|(i, _)| *i as u32).collect::<Vec<u32>>())?;
         }
         o.set_named_property("ts", ev.ts)?;
@@ -329,7 +334,7 @@ impl S7Native {
         Ok(promise)
     }
 
-    /// subscribe({conn, sub, tags, intervalMs, onChange, condTag, condIntervalMs})
+    /// subscribe({conn, sub, tags, intervalMs, onChange, condTag, condIntervalMs, push})
     /// -> Promise<[{tag, error}]> (tags that do not parse; they are read as bad values)
     #[napi(ts_return_type = "Promise<any>")]
     pub fn subscribe<'e>(&self, env: &'e Env, p: SubParams) -> napi::Result<Object<'e>> {
@@ -347,7 +352,9 @@ impl S7Native {
                 d
             }
         };
+        let generation = SUB_GEN.fetch_add(1, Ordering::Relaxed);
         let cfg = SubCfg {
+            key: format!("{}#{generation}", p.sub),
             sub: p.sub.clone(),
             conn: p.conn.clone(),
             tags: Arc::new(p.tags.clone()),
@@ -355,6 +362,7 @@ impl S7Native {
             on_change: p.on_change.unwrap_or(true),
             cond: p.cond_tag.clone().filter(|s| !s.is_empty()),
             cond_interval: ms(p.cond_interval_ms, 100),
+            push: p.push.unwrap_or(false),
         };
         let (data, s2, tx2) = (self.on_data.clone(), stop.clone(), tx.clone());
         std::thread::Builder::new().name(format!("s7sub-{}", p.sub)).spawn(move || sub_loop(cfg, tx2, s2, data)).map_err(napi_err)?;
@@ -517,14 +525,22 @@ fn worker(id: String, dev: Arc<dyn Device>, rx: Receiver<Msg>, status: StatusFn,
     status.call((id, "disconnected".into(), "closed".into()), ThreadsafeFunctionCallMode::NonBlocking);
 }
 
+/// Generation counter of the subscriptions: a re-subscribe with the same id
+/// gets a new PLC subscription key, so the cleanup of the old loop (which can
+/// still run after the new one starts) never touches the new one.
+static SUB_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 struct SubCfg {
     sub: String,
+    /// Key of the PLC subscription in the device: the id and the generation.
+    key: String,
     conn: String,
     tags: Arc<Vec<String>>,
     interval: Duration,
     on_change: bool,
     cond: Option<String>,
     cond_interval: Duration,
+    push: bool,
 }
 
 fn truthy(v: &Option<Val>) -> bool {
@@ -537,7 +553,62 @@ fn truthy(v: &Option<Val>) -> bool {
     }
 }
 
+/// How long one push poll holds the connection thread.
+const PUSH_WAIT: Duration = Duration::from_millis(50);
+
+/// Push mode: polls the PLC subscription on the connection thread. Returns
+/// false when the PLC refuses the subscription (the caller then reads the
+/// tags cyclically).
+fn push_loop(c: &SubCfg, tx: &Sender<Msg>, stop: &AtomicBool, data: &DataFn) -> bool {
+    let cycle_ms = c.interval.as_millis().min(u32::MAX as u128) as u32;
+    while !stop.load(Ordering::SeqCst) {
+        let start = Instant::now();
+        let (rtx, rrx) = mpsc::sync_channel(1);
+        let (key, tags) = (c.key.clone(), c.tags.clone());
+        let job: Job = Box::new(move |dev| {
+            let _ = rtx.send(dev.push_poll(&key, &tags, cycle_ms, PUSH_WAIT));
+        });
+        if tx.send(Msg::Job(job)).is_err() {
+            return true;
+        }
+        let Ok(r) = rrx.recv() else { return true };
+        match r {
+            Ok(device::Push::Values(vals, ts)) => {
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                let ev = DataEv {
+                    sub: c.sub.clone(),
+                    conn: c.conn.clone(),
+                    total: c.tags.len(),
+                    vals,
+                    ts: ts.unwrap_or_else(device::rfc3339_now),
+                    ms: start.elapsed().as_secs_f64() * 1000.0,
+                };
+                if data.call(ev, ThreadsafeFunctionCallMode::Blocking) != napi::Status::Ok {
+                    break;
+                }
+            }
+            Ok(device::Push::Idle) => {}
+            Ok(device::Push::Down) => {
+                // the connection thread reconnects (tick); wait here, not there
+                let until = Instant::now() + Duration::from_millis(500);
+                while !stop.load(Ordering::SeqCst) && Instant::now() < until {
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            }
+            Err(_) => return false,
+        }
+    }
+    let key = c.key.clone();
+    let _ = tx.send(Msg::Job(Box::new(move |dev| dev.push_close(&key))));
+    true
+}
+
 fn sub_loop(c: SubCfg, tx: Sender<Msg>, stop: Arc<AtomicBool>, data: DataFn) {
+    if c.push && push_loop(&c, &tx, &stop, &data) {
+        return;
+    }
     let n = c.tags.len();
     let mut read_list: Vec<String> = c.tags.as_ref().clone();
     if let Some(ct) = &c.cond {
@@ -626,15 +697,40 @@ mod fakes {
     }
 
     /// Starts a fake S7-1200 speaking S7CommPlus (DB1 "Data_block_1", M tags
-    /// Motor_On/Speed…); returns "127.0.0.1:port".
+    /// Motor_On/Speed…); returns "127.0.0.1:port". `fw4`: behave like an
+    /// S7-1500 FW V4.x (subscriptions need a cycle time, FW V4 vartype flags).
     #[napi]
-    pub fn start_fake_s7plus(tls: Option<bool>) -> napi::Result<String> {
+    pub fn start_fake_s7plus(tls: Option<bool>, fw4: Option<bool>) -> napi::Result<String> {
         let f = s7plus::fake::FakePlc::start().map_err(crate::napi_err)?;
         if tls == Some(true) {
             f.enable_tls().map_err(crate::napi_err)?;
         }
+        if fw4 == Some(true) {
+            let mut st = f.lock();
+            st.model.use_fw4_flags();
+            st.model.sub_needs_cycle = true;
+        }
         let a = f.addr();
         KEEP.lock().unwrap().push(Box::new(f));
         Ok(a)
+    }
+
+    /// Closes every client connection of the fake S7CommPlus PLC at `addr`.
+    #[napi]
+    pub fn fake_s7plus_drop_connections(addr: String) {
+        let keep = KEEP.lock().unwrap();
+        if let Some(f) = keep.iter().filter_map(|b| b.downcast_ref::<s7plus::fake::FakePlc>()).find(|f| f.addr() == addr) {
+            f.drop_connections();
+        }
+    }
+
+    /// Number of live subscriptions of the fake S7CommPlus PLC at `addr`.
+    #[napi]
+    pub fn fake_s7plus_subscriptions(addr: String) -> u32 {
+        let keep = KEEP.lock().unwrap();
+        keep.iter()
+            .filter_map(|b| b.downcast_ref::<s7plus::fake::FakePlc>())
+            .find(|f| f.addr() == addr)
+            .map_or(0, |f| f.subscriptions() as u32)
     }
 }

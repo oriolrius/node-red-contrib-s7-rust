@@ -4,6 +4,7 @@
       "name": "Name",
       "endpoint": "PLC",
       "tags": "Tags",
+      "mode": "Mode",
       "interval": "Interval (ms)",
       "condTag": "Fast while",
       "onChange": "send only values that changed",
@@ -14,6 +15,10 @@
       "tags": "one address per line",
       "condTag": "optional condition tag, e.g. M0.0",
       "topic": "object mode only"
+    },
+    "mode": {
+      "poll": "read cyclically",
+      "push": "PLC subscription (S7CommPlus)"
     },
     "output": {
       "each": "one message per tag (topic = tag)",

@@ -15,9 +15,9 @@ use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use serde_json::{json, Value as J};
 
 use s7::{Stats, Val};
-use s7plus::{AreaItem, Client, Error as PErr, Options, PlcValue, TlsOptions};
+use s7plus::{AreaItem, Client, Error as PErr, ItemAddress, Options, PlcValue, SubOptions, Subscription, TlsOptions, Value as PValue};
 
-use crate::device::{emit_log, Device, Out};
+use crate::device::{emit_log, Device, Out, Push};
 use crate::{LogFn, OpenParams, OpenResult, StatusFn};
 
 #[derive(Clone)]
@@ -50,6 +50,21 @@ pub struct PlusDev {
     last_try: Mutex<Option<Instant>>,
     reconnects: AtomicU64,
     stats: Stats,
+    /// PLC subscriptions of the `s7 watch` nodes in push mode, by node id.
+    push: Mutex<HashMap<String, PushSub>>,
+}
+
+/// A PLC subscription. It belongs to one session: after a reconnect it is
+/// created again.
+struct PushSub {
+    client: Arc<Client>,
+    /// The tag list of the subscription (another list subscribes again).
+    tags: Vec<String>,
+    sub: Subscription,
+    /// Reference id -> (index in the tag list, tag).
+    refs: HashMap<u32, (usize, PTag)>,
+    /// Tags that do not resolve: sent with the first poll.
+    pending: Vec<(usize, Out)>,
 }
 
 fn transport(e: &PErr) -> bool {
@@ -145,6 +160,7 @@ impl PlusDev {
             last_try: Mutex::new(None),
             reconnects: AtomicU64::new(0),
             stats: Stats::new(),
+            push: Mutex::new(HashMap::new()),
         };
         Ok((Arc::new(dev), OpenResult { protocol: "s7plus".into(), addr, rack: None, slot: None, link: None }))
     }
@@ -289,6 +305,70 @@ impl PlusDev {
     }
 }
 
+/// The address of a resolved tag.
+fn tag_address(name: &str, pt: &PTag) -> Result<ItemAddress, String> {
+    match pt {
+        PTag::Abs(_, it) => s7plus::area_address(it).map_err(|e| format!("{name}: {e}")),
+        PTag::Sym(s) => Ok(s.addr.clone()),
+    }
+}
+
+/// A PLC value (read or notification) -> Out. A DTL tag can learn its
+/// interface timestamp: the second value is then the updated tag.
+fn decode_out(name: &str, pt: &PTag, v: &PValue) -> (Out, Option<PTag>) {
+    match pt {
+        PTag::Abs(tag, it) => match v.v.as_bytes() {
+            None => (Out::bad(format!("{name}: no data (out of range?)")), None),
+            Some(b) => {
+                let data = if it.is_bit { vec![(b.first().copied().unwrap_or(0) >> (it.bit & 7)) & 1] } else { b.to_vec() };
+                match tag.json_value(&data) {
+                    Ok(v) => (Out { val: Some(v), err: None, raw: data }, None),
+                    Err(e) => (Out::bad(e.to_string()), None),
+                }
+            }
+        },
+        PTag::Sym(st) => match s7plus::decode_plc_ts(st, v) {
+            Ok((v, ts)) => {
+                // DTL tags learn their interface timestamp (needed to write them)
+                let learned = match ts {
+                    Some(ts) if ts != st.packed_ts => {
+                        let mut st = st.clone();
+                        st.packed_ts = ts;
+                        Some(PTag::Sym(st))
+                    }
+                    _ => None,
+                };
+                let raw = v.to_json().into_bytes();
+                (Out { val: Some(plc_to_val(&v)), err: None, raw }, learned)
+            }
+            Err(e) => (Out::bad(format!("{name}: {e}")), None),
+        },
+    }
+}
+
+impl PlusDev {
+    /// Creates the PLC subscription of `sub` on the current session.
+    fn push_create(&self, c: &Arc<Client>, tags: &[String], cycle_ms: u32) -> Result<PushSub, PErr> {
+        let mut addrs = Vec::new();
+        let mut refs = HashMap::new();
+        let mut pending = Vec::new();
+        for (i, t) in tags.iter().enumerate() {
+            match self.resolve(t).and_then(|pt| tag_address(t, &pt).map(|a| (pt, a))) {
+                Ok((pt, a)) => {
+                    addrs.push(a);
+                    refs.insert(addrs.len() as u32, (i, pt)); // reference ids are 1..n in address order
+                }
+                Err(e) => pending.push((i, Out::bad(e))),
+            }
+        }
+        if addrs.is_empty() {
+            return Err(PErr::Proto("no tag to subscribe".into()));
+        }
+        let sub = c.subscribe(&addrs, SubOptions { cycle_ms, name: "node-red-s7rs".into(), ..Default::default() })?;
+        Ok(PushSub { client: c.clone(), tags: tags.to_vec(), sub, refs, pending })
+    }
+}
+
 impl Device for PlusDev {
     fn read(&self, tags: &[String]) -> (Vec<Out>, Option<String>) {
         let mut out: Vec<Out> = tags.iter().map(|_| Out::default()).collect();
@@ -332,33 +412,11 @@ impl Device for PlusDev {
                 out[i] = Out::bad(format!("{}: {}", tags[i], PErr::Item(errs[k])));
                 continue;
             }
-            out[i] = match pt {
-                PTag::Abs(tag, it) => match vals[k].v.as_bytes() {
-                    None => Out::bad(format!("{}: no data (out of range?)", tags[i])),
-                    Some(b) => {
-                        let data = if it.is_bit { vec![(b.first().copied().unwrap_or(0) >> (it.bit & 7)) & 1] } else { b.to_vec() };
-                        match tag.json_value(&data) {
-                            Ok(v) => Out { val: Some(v), err: None, raw: data },
-                            Err(e) => Out::bad(e.to_string()),
-                        }
-                    }
-                },
-                PTag::Sym(st) => match s7plus::decode_plc_ts(st, &vals[k]) {
-                    Ok((v, ts)) => {
-                        // DTL tags learn their interface timestamp (needed to write them)
-                        if let Some(ts) = ts {
-                            if ts != st.packed_ts {
-                                let mut st = st.clone();
-                                st.packed_ts = ts;
-                                learned.push((tags[i].clone(), PTag::Sym(st)));
-                            }
-                        }
-                        let raw = v.to_json().into_bytes();
-                        Out { val: Some(plc_to_val(&v)), err: None, raw }
-                    }
-                    Err(e) => Out::bad(format!("{}: {e}", tags[i])),
-                },
-            };
+            let (o, l) = decode_out(&tags[i], pt, &vals[k]);
+            out[i] = o;
+            if let Some(l) = l {
+                learned.push((tags[i].clone(), l));
+            }
         }
         if !learned.is_empty() {
             self.tags.lock().unwrap().extend(learned);
@@ -500,6 +558,82 @@ impl Device for PlusDev {
             }
             x => return Err(format!("unknown action {x:?} for s7plus (status, info, cpuState, limits, dbs, browse, alarms)")),
         })
+    }
+
+    fn push_poll(&self, sub: &str, tags: &[String], cycle_ms: u32, wait: Duration) -> Result<Push, String> {
+        let Some(c) = self.client.lock().unwrap().clone() else { return Ok(Push::Down) };
+        let mut map = self.push.lock().unwrap();
+        if !map.get(sub).is_some_and(|p| Arc::ptr_eq(&p.client, &c) && p.tags == tags) {
+            // the subscription of a lost session is gone with it; another tag list
+            // needs a new one
+            if let Some(old) = map.remove(sub) {
+                if Arc::ptr_eq(&old.client, &c) {
+                    let _ = old.sub.close(&c);
+                }
+            }
+            match self.push_create(&c, tags, cycle_ms) {
+                Ok(p) => {
+                    map.insert(sub.to_string(), p);
+                }
+                Err(e) if transport(&e) => {
+                    drop(map);
+                    self.drop_client(&e);
+                    return Ok(Push::Down);
+                }
+                Err(e) => {
+                    emit_log(&self.log, &self.id, "warn", format!("PLC subscription refused ({e}); the tags are read cyclically"));
+                    return Err(e.to_string());
+                }
+            }
+        }
+        let p = map.get_mut(sub).expect("subscription");
+        let mut out = std::mem::take(&mut p.pending);
+        let mut ts = None;
+        let mut learned = Vec::new();
+        match p.sub.next(&c, wait) {
+            Ok(n) => {
+                ts = n.timestamp.map(|t| t.rfc3339_nano());
+                for (r, v) in &n.values {
+                    if let Some((i, pt)) = p.refs.get_mut(r).filter(|(i, _)| *i < tags.len()) {
+                        let (o, l) = decode_out(&tags[*i], pt, v);
+                        if let Some(l) = l {
+                            learned.push((tags[*i].clone(), l.clone()));
+                            *pt = l;
+                        }
+                        out.push((*i, o));
+                    }
+                }
+                for (r, e) in &n.item_errors {
+                    if let Some((i, _)) = p.refs.get(r).filter(|(i, _)| *i < tags.len()) {
+                        out.push((*i, Out::bad(format!("{}: {}", tags[*i], PErr::Item(*e as u64)))));
+                    }
+                }
+            }
+            Err(e) if e.is_timeout() => {}
+            Err(e) if transport(&e) => {
+                map.remove(sub);
+                drop(map);
+                self.drop_client(&e);
+                return Ok(Push::Down);
+            }
+            Err(e) => emit_log(&self.log, &self.id, "warn", format!("notification: {e}")),
+        }
+        drop(map);
+        if !learned.is_empty() {
+            self.tags.lock().unwrap().extend(learned);
+        }
+        out.sort_by_key(|(i, _)| *i); // the PLC sends the values in its own order
+        Ok(if out.is_empty() { Push::Idle } else { Push::Values(out, ts) })
+    }
+
+    fn push_close(&self, sub: &str) {
+        let p = self.push.lock().unwrap().remove(sub);
+        if let Some(p) = p {
+            let cur = self.client.lock().unwrap().clone();
+            if cur.is_some_and(|c| Arc::ptr_eq(&c, &p.client)) {
+                let _ = p.sub.close(&p.client);
+            }
+        }
     }
 
     fn shutdown(&self) {
