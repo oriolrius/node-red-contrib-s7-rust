@@ -25,6 +25,17 @@ impl Out {
     }
 }
 
+/// One poll of a PLC subscription (S7CommPlus).
+pub enum Push {
+    /// Values that changed (index in the tag list, value) and the PLC
+    /// timestamp of the notification (RFC 3339), when the PLC sends one.
+    Values(Vec<(usize, Out)>, Option<String>),
+    /// No notification in the wait time.
+    Idle,
+    /// No connection: the caller waits (not on the connection thread) and tries again.
+    Down,
+}
+
 /// A PLC connection. All methods run on the connection thread.
 pub trait Device: Send + Sync {
     /// Reads all tags; per-tag errors in `Out`. The second value is the
@@ -39,6 +50,15 @@ pub trait Device: Send + Sync {
     /// Diagnostics: "status" and the protocol's actions.
     fn call(&self, action: &str, args: &J) -> Result<J, String>;
     fn shutdown(&self);
+    /// PLC subscription `sub` on `tags` with a cycle time: waits up to `wait`
+    /// for the next notification. The first call creates the subscription
+    /// (again after a reconnect); its first result holds every value. Err =
+    /// no PLC subscription (the caller reads the tags cyclically instead).
+    fn push_poll(&self, _sub: &str, _tags: &[String], _cycle_ms: u32, _wait: Duration) -> Result<Push, String> {
+        Err("PLC subscriptions need S7CommPlus".into())
+    }
+    /// Deletes the PLC subscription `sub` (if any).
+    fn push_close(&self, _sub: &str) {}
 }
 
 /// Builds the device of an `open` call.

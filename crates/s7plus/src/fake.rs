@@ -63,6 +63,8 @@ pub struct FakeState {
     pub tls: Option<Arc<rustls::ServerConfig>>,
     /// The PAOM string sent in ServerSessionVersion 319.
     pub paom: String,
+    /// The open client connections (see [`FakePlc::drop_connections`]).
+    conns: Vec<TcpStream>,
     /// Refuse a session without TLS, like PLCSIM Advanced V8 (FW S4.1).
     pub require_tls: bool,
     pub model: FakeModel,
@@ -95,6 +97,9 @@ pub struct FakeModel {
     pub next_obj: u32,
     pub credit_sets: Vec<i16>,
     pub explores: Vec<ExploreReq>,
+    /// S7-1500 FW V4.x (PLCSIM S4.1): a subscription with cycle time 0 gets
+    /// the first notification only, no changes.
+    pub sub_needs_cycle: bool,
 }
 
 struct FakeSub {
@@ -104,6 +109,9 @@ struct FakeSub {
     credit: i16,
     tick: u8,
     trigger: SyncSender<()>,
+    /// Sends changes (false: only the first notification, see
+    /// [`FakeModel::sub_needs_cycle`]).
+    changes: bool,
 }
 
 /// A running fake PLC on 127.0.0.1 (stopped on drop).
@@ -131,6 +139,7 @@ impl FakePlc {
             echo: None,
             tls: None,
             paom: "1;6ES7 212-1BE31-0XB0 ;V3.0".into(),
+            conns: Vec::new(),
             require_tls: false,
             model: FakeModel::new(),
         }));
@@ -142,6 +151,9 @@ impl FakePlc {
                     return;
                 }
                 let Ok(c) = c else { continue };
+                if let Ok(k) = c.try_clone() {
+                    lock(&st).conns.push(k);
+                }
                 let (st, sp) = (st.clone(), sp.clone());
                 let _ = thread::Builder::new().name("s7plus-fake-conn".into()).spawn(move || serve(st, sp, c));
             }
@@ -169,6 +181,16 @@ impl FakePlc {
     /// Number of live subscriptions.
     pub fn subscriptions(&self) -> usize {
         self.lock().model.subs.len()
+    }
+
+    /// Closes every client connection, like a PLC restart: the sessions and
+    /// their subscriptions are gone.
+    pub fn drop_connections(&self) {
+        let mut st = self.lock();
+        for c in st.conns.drain(..) {
+            let _ = c.shutdown(std::net::Shutdown::Both);
+        }
+        st.model.subs.clear(); // dropping the senders stops the pumps
     }
 }
 
@@ -700,7 +722,9 @@ impl Fake {
                 return self.reply(ver, m, &w.b);
             }
             let (tx, rx) = sync_channel(1);
-            let mut s = FakeSub { id, refs: HashMap::new(), credit: -1, tick: 0, trigger: tx };
+            let cycle = obj.attr(ATTR_SUB_CYCLE_TIME).and_then(|v| v.v.as_u32()).unwrap_or(0);
+            let changes = !(md.sub_needs_cycle && cycle == 0);
+            let mut s = FakeSub { id, refs: HashMap::new(), credit: -1, tick: 0, trigger: tx, changes };
             if let Some(c) = obj.attr(ATTR_SUB_CREDIT_LIMIT).and_then(|v| v.v.as_i16()) {
                 s.credit = c;
             }
@@ -746,7 +770,7 @@ impl Fake {
         let st = self.st();
         for s in st.model.subs.values() {
             let hit = s.refs.values().any(|r| keys.iter().any(|k| r.split('|').next() == Some(k.as_str())));
-            if hit {
+            if hit && s.changes {
                 let _ = s.trigger.try_send(());
             }
         }
@@ -1058,6 +1082,7 @@ impl FakeModel {
             next_obj: 0,
             credit_sets: Vec::new(),
             explores: Vec::new(),
+            sub_needs_cycle: false,
         };
         md.types.insert(TI_DB1, type_obj(TI_DB1, true, 220, &db1_vars()));
         md.types.insert(TI_DB2, type_obj(TI_DB2, false, 4, &db2_vars()));

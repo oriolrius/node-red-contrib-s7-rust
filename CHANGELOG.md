@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `s7 watch`: mode "PLC subscription" (S7CommPlus). The node subscribes to the tags with the
+  interval as cycle time, and the PLC sends only the values that changed (no read request per
+  cycle). `msg.ts` is the PLC time of the notification when the PLC sends one. After a reconnect
+  the node subscribes again; when the PLC refuses the subscription (or for S7comm) it reads
+  cyclically. Tested on PLCSIM Advanced V8 (FW S4.1) with TLS: first message with all tags, then
+  the changes every cycle, and a write is in the next notification. The default stays "read
+  cyclically".
+
+### Fixed
+
+- S7CommPlus subscriptions on S7-1500 FW V4.x: with cycle time 0 the PLC sends only the first
+  notification. `SubOptions::cycle_ms` documents it; the fake PLC models it
+  (`FakeModel::sub_needs_cycle`), and golden tests decode FW V4.x notifications (change counter,
+  8-byte timestamp).
+- Addon: a data event with every tag in another order than the tag list now carries the index
+  list (before, the values went to the wrong tags; only possible with PLC notifications).
+
 ## [1.0.5] - 2026-11-12
 
 ### Fixed

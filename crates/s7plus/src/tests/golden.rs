@@ -150,3 +150,42 @@ fn golden_notifications() {
         }
     }
 }
+
+// Notifications of PLCSIM Advanced V8 (CPU 1513-1 PN, FW S4.1, TLS), subscription
+// with cycle 100 ms on "TestSub".tick (ref 1, DInt), toggle (2, Bool), slow (3, Int),
+// sp (4, Int), echo (5, Int). The first one has all values; later ones only the
+// changed values; after a write of sp = 42 the PLC copies it to echo.
+#[test]
+fn golden_notifications_fw4() {
+    // (body, sequence number, credit tick, values by reference id)
+    type Case<'a> = (&'a str, u32, u8, &'a [(u32, &'a str)]);
+    let cases: [Case; 3] = [
+        (
+            "70000fd9040000000000010000066010db092b560192000000050007030992000000040007030992000000030007001192000000020001019200000001000886520000000000",
+            0,
+            1,
+            &[(5, "Int 777"), (4, "Int 777"), (3, "Int 17"), (2, "Bool true"), (1, "DInt 850")],
+        ),
+        ("70000fd9040000000000020100066010db0ab210019200000001000886530000000000", 1, 2, &[(1, "DInt 851")]),
+        (
+            "70000fd90400000000000b0a00066010db186da80192000000050007002a92000000040007002a920000000200010092000000010008865c0000000000",
+            10,
+            11,
+            &[(5, "Int 42"), (4, "Int 42"), (2, "Bool false"), (1, "DInt 860")],
+        ),
+    ];
+    let mut last_ts = None;
+    for (body, seq, credit_tick, vals) in cases {
+        let n = decode_notification(&h(body)).unwrap_or_else(|e| panic!("{body}: {e}"));
+        assert_eq!((n.subscription_id, n.seq, n.credit_tick, n.change_counter), (0x7000_0fd9, seq, credit_tick, 1), "{n}");
+        assert!(n.item_errors.is_empty(), "{n}");
+        let got: Vec<(u32, String)> = n.values.iter().map(|(r, v)| (*r, v.to_string())).collect();
+        let want: Vec<(u32, String)> = vals.iter().map(|(r, s)| (*r, s.to_string())).collect();
+        assert_eq!(got, want);
+        let ts = n.timestamp.expect("FW V4 sends a timestamp");
+        if let Some(prev) = last_ts {
+            assert!(ts > prev, "timestamps go up");
+        }
+        last_ts = Some(ts);
+    }
+}

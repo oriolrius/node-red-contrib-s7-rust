@@ -1,5 +1,6 @@
 <script type="text/html" data-help-name="s7rs-watch">
-  <p>Reads tags at a fixed interval and sends a message when a value changes.</p>
+  <p>Sends a message when a tag value changes: it reads the tags at a fixed interval, or
+    (S7CommPlus) the PLC sends the changes.</p>
   <h3>Outputs</h3>
   <dl class="message-properties">
     <dt>payload <span class="property-type">any | object</span></dt>
@@ -10,7 +11,8 @@
     <dt class="optional">changed <span class="property-type">array</span></dt>
     <dd>all tags mode only: the tags that changed in this cycle.</dd>
     <dt>ts <span class="property-type">string</span></dt>
-    <dd>start time of the read cycle (ISO, UTC).</dd>
+    <dd>start time of the read cycle (ISO, UTC). PLC subscription: the PLC time of the
+      notification, when the PLC sends one (S7-1500), else the receive time.</dd>
   </dl>
   <h3>Details</h3>
   <p>A Rust thread reads the tags and compares the raw PLC bytes. Node-RED gets no message when
@@ -19,6 +21,12 @@
   <h4>Fast while</h4>
   <p>Conditional rate: while this tag is true (or not zero), the node reads every <code>N</code> ms
     instead of the interval. The node does not send the condition tag, unless it is also in the list.</p>
-  <h4>S7CommPlus</h4>
-  <p>The watch uses polling, not PLC subscriptions.</p>
+  <h4>Mode</h4>
+  <p><b>read cyclically</b>: the node reads every interval (all protocols).</p>
+  <p><b>PLC subscription</b> (S7CommPlus): the node subscribes to the tags with the interval as
+    cycle time (100 ms or more). The PLC checks the tags each cycle and sends only the values that
+    changed, so there is no read request per cycle. The first message has all tags. "Fast while" and
+    "send only values that changed" do not apply. After a reconnect the node subscribes again. If
+    the PLC refuses the subscription (for example, no free subscription resources) or the protocol is
+    S7comm, the node reads cyclically and logs a warning (S7CommPlus).</p>
 </script>

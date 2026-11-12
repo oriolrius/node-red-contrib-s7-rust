@@ -82,7 +82,7 @@ Then restart Node-RED. The nodes are in the **network** category of the palette.
 | `s7 endpoint` (config) | One PLC connection: protocol, host, port. S7comm: CPU family, rack/slot or TSAPs, PDU, gap, byte order. S7CommPlus: remote TSAP, TLS, user, password (stored as a credential). |
 | `s7 read` | Reads tags when a message arrives. Output: one value, `{tag: value}` or an array. |
 | `s7 write` | Writes the tag of the node, the tag in `msg.topic`, or `msg.payload = {tag: value, …}` in one request. |
-| `s7 watch` | A Rust thread reads the tags at an interval and sends only the changes. Optional conditional rate ("Fast while" a tag is true). |
+| `s7 watch` | Sends only the changes. Mode "read cyclically": a Rust thread reads the tags at an interval, with an optional conditional rate ("Fast while" a tag is true). Mode "PLC subscription" (S7CommPlus): the PLC sends the changes. |
 | `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `dbs`, `browse`, `alarms`, `limits`. |
 
 Every node has full help in the editor sidebar. Bad tags never stop the other tags: they give
@@ -151,7 +151,7 @@ This map shows each protocol function and where it is available. It is strict: a
 | Communication limits | read of the PLC limit attributes | ✅ | `s7 info`: `limits`, `info` |
 | Active alarms | alarm objects and text libraries | ✅ | `s7 info`: `alarms` |
 | Alarm subscription | CreateObject subscription, notifications | 🔒 | — |
-| Variable subscription | CreateObject subscription, notifications | 🔒 | — (`s7 watch` uses polling) |
+| Variable subscription | CreateObject subscription with a cycle time, notifications, credit limit | ✅ | `s7 watch` (mode "PLC subscription") |
 | Set CPU operating state (RUN/STOP) | SetVariable 0x04F2 | 🔒 | — |
 | Block upload / download, program changes | BeginSequence 0x0556, EndSequence 0x0560, Invoke 0x056B | ❌ | — |
 | Links | AddLink 0x0506, RemoveLink 0x051A, GetLink 0x0524 | ❌ | — |
@@ -262,7 +262,9 @@ S7-1200 on the same LAN).
 
 - The addon runs in the Node-RED process. A fatal error in native code stops Node-RED. The code
   is safe Rust; the Node-API layer is the only FFI.
-- S7CommPlus watch uses polling, not PLC subscriptions.
+- `s7 watch`, mode "PLC subscription": the cycle time is the interval (100 ms or more; S7-1500
+  FW V4.x sends no changes without a cycle time). Each subscription uses one of the PLC
+  subscription resources (`s7 info` → `limits`); when the PLC refuses it, the node reads cyclically.
 - S7CommPlus: the PLC certificate is not verified (TLS protects against passive capture only).
 
 ## Migration from @oriolrius/node-red-contrib-s7

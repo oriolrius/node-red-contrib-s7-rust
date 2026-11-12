@@ -299,6 +299,41 @@ fn subscription_fake() {
     assert_eq!(f.subscriptions(), 0, "subscriptions left");
 }
 
+// S7-1500 FW V4.x (PLCSIM S4.1): with cycle time 0 only the first
+// notification comes; with a cycle time the changes come too.
+#[test]
+fn subscription_needs_cycle_fake() {
+    let f = FakePlc::start().unwrap();
+    f.lock().model.sub_needs_cycle = true;
+    let c = dial(&f, Options::default());
+    let speed = c.resolve_tag("Speed").unwrap();
+    let wait_for = |cycle_ms: u32, value: &str| {
+        let mut sub =
+            c.subscribe(std::slice::from_ref(&speed.addr), SubOptions { cycle_ms, credit_limit: -1, ..Default::default() }).unwrap();
+        let first = sub.next(&c, Duration::from_secs(1)).unwrap();
+        assert!(first.value(1).is_some(), "cycle {cycle_ms}: no first notification: {first}");
+        assert!(c.write_tags(std::slice::from_ref(&speed), &[value]).unwrap()[0].is_none());
+        let want = format!("Int {value}");
+        let t0 = std::time::Instant::now();
+        let mut got = false;
+        while t0.elapsed() < Duration::from_millis(300) {
+            match sub.next(&c, Duration::from_millis(50)) {
+                Ok(n) if n.value(1).map(|v| v.to_string()) == Some(want.clone()) => {
+                    got = true;
+                    break;
+                }
+                Ok(_) => {}
+                Err(e) if e.is_timeout() => {}
+                Err(e) => panic!("cycle {cycle_ms}: {e}"),
+            }
+        }
+        sub.close(&c).unwrap();
+        got
+    };
+    assert!(!wait_for(0, "11"), "cycle 0: a change came");
+    assert!(wait_for(100, "12"), "cycle 100: no change came");
+}
+
 #[test]
 fn subscription_run_with_callback() {
     let f = FakePlc::start().unwrap();
