@@ -1,0 +1,7 @@
+# The Rust version of CI and releases (see AGENTS.md, "Rust toolchain"). A new
+# stable release brings new clippy lints; move to it in its own pull request.
+[toolchain]
+channel = "1.100.0"
+components = ["rustfmt", "clippy"]
+# the release addon is also built for musl (Alpine)
+targets = ["x86_64-unknown-linux-musl"]
