@@ -246,7 +246,7 @@ fn brcv(s: &mut TcpStream, f: &[u8], st: &Arc<Mutex<State>>, rx_block: &mut Opti
     let err: u16 = if refused { 0x0001 } else { 0 };
     let e = err.to_be_bytes();
     let ap = [0x00, 0x01, 0x12, 0x08, 0x12, 0x86, 0x01, ack_seq, 0x00, 0x00, e[0], e[1]];
-    s.write_all(&userdata(pref, &ap, &[0x0A, 0x00, 0x00, 0x00]))?;
+    // store the block before the acknowledgement: the client checks it after send()
     if eos == 0 || refused {
         if let Some(b) = rx_block.take() {
             if !refused {
@@ -254,5 +254,6 @@ fn brcv(s: &mut TcpStream, f: &[u8], st: &Arc<Mutex<State>>, rx_block: &mut Opti
             }
         }
     }
+    s.write_all(&userdata(pref, &ap, &[0x0A, 0x00, 0x00, 0x00]))?;
     Ok(())
 }

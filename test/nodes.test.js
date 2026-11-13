@@ -486,8 +486,15 @@ test('S7 partner: s7 brcv and s7 bsend (BSEND/BRCV)', async () => {
   // the PLC restarts: the endpoint connects again and the receivers go on
   fakes.fakePartnerDropConnections(addr);
   const ep = helper.getNode('ep');
-  await until(() => ep.state.state === 'connected' && fakes.fakePartnerBsend(addr, 1, [7]), 15000);
-  await until(() => one.length === 2, 15000);
+  // a BSEND just after the drop can go to the old connection: send again until it comes
+  let last = 0;
+  await until(() => {
+    if (ep.state.state === 'connected' && Date.now() - last > 300) {
+      last = Date.now();
+      fakes.fakePartnerBsend(addr, 1, [7]);
+    }
+    return one.length >= 2;
+  }, 15000);
   assert.deepEqual([...one[1].payload], [7]);
 });
 
