@@ -40,6 +40,12 @@
       <li><code>acknowledge {ids, all}</code>: acknowledges alarms (ids <code>"0x…"</code>, or
         <code>all: true</code> for every alarm that waits). <b>Writes to the PLC.</b> Returns
         <code>sent</code>; the result comes through <code>s7 alarms</code>.</li>
+      <li><code>resolve {name}</code>: the object id (RID) of a DB, FB, FC, OB or technology object
+        by its name, from the PLC (<code>{path}</code>: an object path such as
+        <code>"ASRoot.PLCProgram"</code>); <code>rid</code> is null when the PLC has no such object.
+        Variables inside a DB are not objects.</li>
+      <li><code>links {rid, aid}</code>: the objects that a relation of an object points to (for
+        example rid 8, aid 2667: the active alarm instances).</li>
   </ul>
   <p><code>setClock</code> and <code>syncClock</code> change the PLC clock. STOP/START of the CPU and
     block upload are not available.</p>

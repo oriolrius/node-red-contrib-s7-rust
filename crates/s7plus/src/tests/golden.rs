@@ -283,3 +283,55 @@ fn nesting_limit() {
     Value::decode(&mut r);
     assert!(r.err.is_none() && r.left() == 0, "{:?} left {}", r.err, r.left());
 }
+
+/// GetVariablesAddress and GetLink responses of PLCSIM Advanced V8 (FW S4.1).
+#[test]
+fn links_and_resolve_responses() {
+    use crate::links::{decode_links, decode_resolve};
+    use crate::wire::Reader;
+    // "ASRoot.PLCProgram.TestSub" -> DB4 (after the return value 0x2036800000eb0013)
+    let found = h("908dd0808083d68013050188d0b880040000000100000001d08dd1808081c3ffe0000600000000");
+    let mut r = Reader::new(&found);
+    assert_eq!(r.vlq64(), 0x2036_8000_00eb_0013);
+    assert_eq!(decode_resolve(&mut r).unwrap(), Some(0x8a0e_0004));
+    let missing = h("00010000000600000000");
+    let mut r = Reader::new(&missing);
+    assert_eq!(r.vlq64(), 0);
+    assert_eq!(decode_resolve(&mut r).unwrap(), None);
+    // two elements: all are read, the first is the object
+    let two = h(&"05 02 88d0b88004 00000001 00000001 01 00000001 00000001".replace(' ', ""));
+    let mut r = Reader::new(&two);
+    assert_eq!(decode_resolve(&mut r).unwrap(), Some(0x8a0e_0004));
+    assert_eq!(r.left(), 0);
+    // GetLink(alarm subsystem, itsUpdateRelevantDAI) with one active alarm
+    let links = h("00017200701f0600000000");
+    let mut r = Reader::new(&links);
+    assert_eq!(r.vlq64(), 0);
+    assert_eq!(decode_links(&mut r).unwrap(), vec![0x7200_701f]);
+    // truncated or malformed responses are errors, not partial results
+    for bad in [
+        "02 7200701f 7200",
+        "01 72",
+        "",
+        "05 01 88d0b880",
+        "05 01 88 d0",
+        "05 01 8a0e0004",
+        "05 00",
+        "05 01 00 00000001 00000001",
+        "07 07",
+        "01",
+        // count 255 with one element
+        "05 ff 88d0b88004 00000001 00000001",
+        // a VLQ above 32 bits (0x1_0000_0001 would wrap to RID 1)
+        "05 01 9080808001 00000001 00000001",
+    ] {
+        let b = h(&bad.replace(' ', ""));
+        let mut r = Reader::new(&b);
+        let res = if bad.starts_with("05") || bad.starts_with("07") || bad == "01" {
+            decode_resolve(&mut r).map(|_| ())
+        } else {
+            decode_links(&mut r).map(|_| ())
+        };
+        assert!(res.is_err(), "accepted {bad:?}");
+    }
+}

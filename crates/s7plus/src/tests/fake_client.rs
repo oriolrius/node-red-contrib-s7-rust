@@ -726,3 +726,19 @@ fn alarm_acknowledge_fake() {
     assert!(crate::decode_ack_job(&crate::object::Object::new(1, CLASS_DAI)).is_none());
     assert!(c.acknowledge_alarms(&[]).is_err() && c.acknowledge_alarms(&[0]).is_err());
 }
+
+#[test]
+fn links_and_resolve_fake() {
+    let f = FakePlc::start().unwrap();
+    let c = dial(&f, Options::default());
+    // the fake starts with one active alarm (DAI 0x10000006)
+    assert_eq!(c.get_links(RID_ALARM_SUBSYSTEM, ATTR_SUBSYS_UPD_RELEVANT_DAI).unwrap(), vec![0x1000_0006]);
+    assert!(matches!(c.get_links(RID_ALARM_SUBSYSTEM, 2665), Err(Error::Return { .. })));
+    assert_eq!(c.resolve_object("ASRoot").unwrap(), Some(1));
+    assert_eq!(c.resolve_object("ASRoot.PLCProgram").unwrap(), Some(3));
+    assert_eq!(c.resolve_object(&crate::program_object_path("Data_block_1")).unwrap(), Some(db_area(1)));
+    assert_eq!(c.resolve_object(&crate::program_object_path("1Odd")).unwrap(), Some(db_area(7)));
+    assert_eq!(c.resolve_object("ASRoot.PLCProgram.Nope").unwrap(), None);
+    assert!(c.resolve_object("").is_err());
+    assert_eq!(crate::program_object_path("a.b[1]-c$"), "ASRoot.PLCProgram.a$.b$[1$]$-c$$");
+}

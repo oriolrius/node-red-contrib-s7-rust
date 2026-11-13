@@ -504,6 +504,60 @@ impl Fake {
                 }
                 self.create_subscription(ver, m, obj)
             }
+            FN_GET_LINK => {
+                // alarm subsystem / itsUpdateRelevantDAI: the active DAIs; others
+                // answer like PLCSIM for itsDAI
+                let (rid, aid) = (r.u32(), r.vlq32());
+                if rid == RID_ALARM_SUBSYSTEM && aid == ATTR_SUBSYS_UPD_RELEVANT_DAI {
+                    let ids: Vec<u32> = self
+                        .st()
+                        .model
+                        .dais
+                        .iter()
+                        .filter(|d| d.attr(ATTR_DAI_CPU_ALARM_ID).and_then(|v| v.v.as_u64()).unwrap_or(0) != 0)
+                        .map(|d| d.rid)
+                        .collect();
+                    w.vlq64(0);
+                    w.byte(ids.len() as u8);
+                    for i in ids {
+                        w.u32(i);
+                    }
+                } else {
+                    w.vlq64(0xa026_8100_0081_ffc1);
+                }
+                w.u32(0);
+                self.reply(ver, m, &w.b)
+            }
+            FN_GET_VARIABLES_ADDR => {
+                // the bytes of PLCSIM Advanced V8 (found / not found)
+                let _count = r.byte();
+                let n = r.vlq32() as usize;
+                let path = r.bytes(n).map(|b| String::from_utf8_lossy(b).into_owned()).unwrap_or_default();
+                let rid = match path.as_str() {
+                    "ASRoot" => 1,
+                    "ASRoot.PLCProgram" => 3,
+                    "ASRoot.PLCProgram.Data_block_1" => db_area(1),
+                    "ASRoot.PLCProgram.$1Odd" => db_area(7),
+                    _ => 0,
+                };
+                if rid != 0 {
+                    w.vlq64(0x2036_8000_00eb_0013);
+                    w.byte(5);
+                    w.byte(1);
+                    w.vlq32(rid);
+                    w.u32(1);
+                    w.u32(1);
+                    w.vlq64(0xa034_8800_0081_ffe0);
+                    w.byte(0);
+                } else {
+                    w.vlq64(0);
+                    w.byte(1);
+                    w.byte(0);
+                    w.byte(0);
+                }
+                w.u32(0);
+                self.reply(ver, m, &w.b)
+            }
             FN_SET_MULTI_VARIABLES => self.set_multi(ver, m, &mut r),
             FN_GET_MULTI_VARIABLES => self.get_multi(ver, m, &mut r),
             FN_DELETE_OBJECT => {

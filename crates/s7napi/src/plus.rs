@@ -576,7 +576,7 @@ impl Device for PlusDev {
     }
 
     /// Actions: status, info, certificate, cpuState, limits, dbs, browse, alarms {all},
-    /// acknowledge {ids, all} (writes).
+    /// acknowledge {ids, all} (writes), links {rid, aid}, resolve {name | path}.
     /// RUN/STOP is not exposed.
     fn call(&self, action: &str, a: &J) -> Result<J, String> {
         let e = |e: PErr| e.to_string();
@@ -615,6 +615,39 @@ impl Device for PlusDev {
                     self.run(|c| c.acknowledge_alarms(&ids)).map_err(e)?;
                 }
                 json!({"sent": ids.iter().map(|i| format!("0x{i:016x}")).collect::<Vec<_>>()})
+            }
+            // object relations (GetLink): {rid, aid}, numbers or "0x…" strings
+            "links" => {
+                let num = |k: &str| -> Result<u32, String> {
+                    match a.get(k) {
+                        Some(J::Number(n)) => {
+                            n.as_u64().and_then(|v| u32::try_from(v).ok()).ok_or_else(|| format!("{k}: not a 32-bit number"))
+                        }
+                        Some(J::String(s)) => {
+                            let t = s.trim();
+                            let r = match t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+                                Some(h) => u32::from_str_radix(h, 16),
+                                None => t.parse(),
+                            };
+                            r.map_err(|_| format!("{k} {s:?}: not a number"))
+                        }
+                        _ => Err(format!("links needs {{rid, aid}} ({k} missing)")),
+                    }
+                };
+                let (rid, aid) = (num("rid")?, num("aid")?);
+                let l = self.run(|c| c.get_links(rid, aid)).map_err(e)?;
+                json!({"rid": format!("0x{rid:08x}"), "aid": aid, "links": l.iter().map(|x| format!("0x{x:08x}")).collect::<Vec<_>>()})
+            }
+            // object path -> RID (GetVariablesAddress): {name} of a DB, FB, FC, OB or
+            // technology object, or {path} ("ASRoot.PLCProgram…")
+            "resolve" => {
+                let path = match (a.get("path").and_then(|v| v.as_str()), a.get("name").and_then(|v| v.as_str())) {
+                    (Some(p), _) => p.to_string(),
+                    (None, Some(n)) => s7plus::program_object_path(n),
+                    _ => return Err("resolve needs {name} or {path}".into()),
+                };
+                let rid = self.run(|c| c.resolve_object(&path)).map_err(e)?;
+                json!({"path": path, "rid": rid.map(|r| format!("0x{r:08x}"))})
             }
             "certificate" => {
                 let c = match self.client() {
@@ -669,7 +702,7 @@ impl Device for PlusDev {
             }
             x => {
                 return Err(format!(
-                    "unknown action {x:?} for s7plus (status, info, certificate, cpuState, limits, dbs, browse, alarms, acknowledge)"
+                    "unknown action {x:?} for s7plus (status, info, certificate, cpuState, limits, dbs, browse, alarms, acknowledge, links, resolve)"
                 ))
             }
         })

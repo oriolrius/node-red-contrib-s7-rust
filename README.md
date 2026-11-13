@@ -84,7 +84,7 @@ Then restart Node-RED. The nodes are in the **network** category of the palette.
 | `s7 write` | Writes the tag of the node, the tag in `msg.topic`, or `msg.payload = {tag: value, …}` in one request. |
 | `s7 watch` | Sends only the changes. Mode "read cyclically": a Rust thread reads the tags at an interval, with an optional conditional rate ("Fast while" a tag is true). Mode "PLC subscription" (S7CommPlus): the PLC sends the changes. |
 | `s7 alarms` | S7CommPlus: a message when a PLC alarm comes or goes (alarm subscription; the active alarms at start). `msg.ack` acknowledges alarms. |
-| `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `certificate`, `dbs`, `browse`, `alarms`, `limits`. |
+| `s7 info` | Diagnostics. Both protocols: `status`, `cpuState`. S7comm: `identify`, `szl`, `szlList`, `clock`, `setClock`, `syncClock`, `blocks`, `listBlocks`, `blockInfo`. S7CommPlus: `info`, `certificate`, `dbs`, `browse`, `alarms`, `limits`, `resolve`, `links`. |
 | `s7 bsend` | Sends `msg.payload` as a block to a PLC `BRCV` (S7 connection, protocol "S7 partner"). Writes to the PLC. |
 | `s7 brcv` | A message for each block of a PLC `BSEND` (S7 connection, protocol "S7 partner"). |
 
@@ -159,8 +159,9 @@ This map shows each protocol function and where it is available. It is strict: a
 | Variable subscription | CreateObject subscription with a cycle time, notifications, credit limit | ✅ | `s7 watch` (mode "PLC subscription") |
 | Set CPU operating state (RUN/STOP) | SetVariable 0x04F2 | 🔒 | — |
 | Block upload / download, program changes | BeginSequence 0x0556, EndSequence 0x0560, Invoke 0x056B | ❌ | — |
-| Links | AddLink 0x0506, RemoveLink 0x051A, GetLink 0x0524 | ❌ | — |
-| GetVariablesAddress | 0x0590 | ❌ | — |
+| Object relations (read) | GetLink 0x0524: object id, relation id → linked object ids | ✅ | `s7 info`: `links` |
+| Object path resolution | GetVariablesAddress 0x0590: OMS object path (`ASRoot.PLCProgram.<name>`) → object id | ✅ | `s7 info`: `resolve` |
+| Add / remove relations | AddLink 0x0506, RemoveLink 0x051A | ❌ | — (change the object model; no TIA Portal tool uses them) |
 
 ## Prepare the PLC
 
