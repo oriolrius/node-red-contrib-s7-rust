@@ -716,8 +716,15 @@ fn alarm_acknowledge_fake() {
     let states = |id: u64| c.active_alarms(false).unwrap().iter().find(|a| a.cpu_alarm_id == id).map(|a| a.all_states);
     assert_eq!(states(need), Some(0x85), "waits for acknowledgement");
     c.acknowledge_alarms(&[need, no_need]).unwrap();
-    let n = sub.next(&c, Duration::from_secs(2)).unwrap();
-    let res = n.alarm_objects.iter().find_map(crate::decode_ack_job).expect("AckJob in the notification");
+    // other notifications (the DAI update of the acknowledged alarm) can come first
+    let t0 = std::time::Instant::now();
+    let res = loop {
+        let n = sub.next(&c, Duration::from_secs(2)).unwrap();
+        if let Some(r) = n.alarm_objects.iter().find_map(crate::decode_ack_job) {
+            break r;
+        }
+        assert!(t0.elapsed() < Duration::from_secs(5), "no AckJob in the notifications");
+    };
     assert_eq!(
         res,
         vec![crate::AckResult { cpu_alarm_id: need, result: 0 }, crate::AckResult { cpu_alarm_id: no_need, result: 0x8005u16 as i16 }]
