@@ -87,7 +87,8 @@ pub fn open(p: OpenParams, status: StatusFn, log: Option<LogFn>) -> Result<(Arc<
     match p.protocol.as_deref().unwrap_or("s7") {
         "" | "s7" => S7Dev::open(p, status, log),
         "s7plus" => crate::plus::PlusDev::open(p, status, log),
-        x => Err(format!("unknown protocol {x:?} (s7 or s7plus)")),
+        "s7partner" => crate::partner::PartnerDev::open(p, status, log),
+        x => Err(format!("unknown protocol {x:?} (s7, s7plus or s7partner)")),
     }
 }
 

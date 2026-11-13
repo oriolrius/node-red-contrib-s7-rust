@@ -435,6 +435,58 @@ impl Conn {
         Ok(cn)
     }
 
+    /// Partner (BSEND/BRCV): sends one S7 message with the next PDU reference.
+    pub(crate) fn send_s7(&mut self, rosctr: u8, params: &[u8], data: &[u8]) -> Result<()> {
+        self.pdu_ref = self.pdu_ref.wrapping_add(1);
+        self.send_s7_ref(self.pdu_ref, rosctr, params, data)
+    }
+
+    /// Partner: sends one S7 message with a given PDU reference (an answer
+    /// carries the reference of its request).
+    pub(crate) fn send_s7_ref(&mut self, pdu_ref: u16, rosctr: u8, params: &[u8], data: &[u8]) -> Result<()> {
+        let msg = s7_frame(pdu_ref, rosctr, params, data);
+        if let Some(t) = &self.trace {
+            t("tx", &msg);
+        }
+        let deadline = Instant::now() + self.timeout;
+        self.write_all(&msg, deadline)
+    }
+
+    /// Partner: waits up to `wait` for the next S7 message (no request
+    /// sent): Ok(None) on timeout before the first byte; the frame (COTP +
+    /// S7) otherwise.
+    pub(crate) fn recv_s7(&mut self, wait: Duration) -> Result<Option<Vec<u8>>> {
+        self.s.set_read_timeout(Some(wait.max(Duration::from_millis(1))))?;
+        let mut first = [0u8; 1];
+        match self.s.read(&mut first) {
+            Ok(0) => return Err(io("EOF")),
+            Ok(_) => {}
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => return Ok(None),
+            Err(e) => return Err(e.into()),
+        }
+        if first[0] != 0x03 {
+            return Err(io(format!("bad TPKT version 0x{:02x}", first[0])));
+        }
+        let deadline = Instant::now() + self.timeout;
+        self.buf.resize(3, 0);
+        self.read_full(0, 3, deadline)?;
+        let total = u16::from_be_bytes([self.buf[1], self.buf[2]]) as usize;
+        if total < 7 {
+            return Err(io(format!("short TPKT len {total}")));
+        }
+        self.buf.resize(total - 4, 0);
+        self.read_full(0, total - 4, deadline)?;
+        if let Some(t) = &self.trace {
+            t("rx", &self.buf);
+        }
+        Ok(Some(self.buf.clone()))
+    }
+
+    /// The request timeout.
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
     /// Ends the connection.
     pub fn close(&self) {
         let _ = self.s.shutdown(std::net::Shutdown::Both);

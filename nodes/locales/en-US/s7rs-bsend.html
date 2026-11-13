@@ -1,0 +1,22 @@
+<script type="text/html" data-help-name="s7rs-bsend">
+  <p>Sends <code>msg.payload</code> as a data block to a PLC <code>BRCV</code> (S7 communication over
+    an S7 connection). <b>This writes to the PLC.</b> The endpoint must use the protocol <i>S7 partner
+    (BSEND/BRCV)</i>.</p>
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">Buffer | array | string</span></dt>
+    <dd>the block: a Buffer, an array of bytes, or a string (sent as UTF-8); 1..65534 bytes.</dd>
+    <dt class="optional">rid <span class="property-type">number</span></dt>
+    <dd>the R_ID of the BRCV call in the PLC (when the node has no R_ID).</dd>
+  </dl>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>s7 <span class="property-type">object</span></dt>
+    <dd><code>rid</code>, <code>bytes</code>, <code>ms</code>: the message passes when the PLC
+      acknowledged every fragment.</dd>
+  </dl>
+  <h3>Details</h3>
+  <p>The PLC must call <code>BRCV</code> with <code>EN_R = TRUE</code> and the same R_ID; otherwise
+    it refuses the block and the node reports an error. Blocks larger than one PDU are sent in
+    fragments.</p>
+</script>

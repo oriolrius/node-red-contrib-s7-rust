@@ -1,0 +1,48 @@
+﻿{
+    S7_EditorMode := "SCL";
+    S7_Optimized := "TRUE";
+    S7_Version := "0.1"
+}
+FUNCTION_BLOCK "PartnerComm"
+    VAR
+        sender : BSEND;
+        receiver : BRCV;
+    END_VAR
+    VAR_TEMP
+        i : Int;
+    END_VAR
+
+    { S7_Language := "SCL" }
+    NETWORK
+           // S7 connection S7_Connection_1 (ID 16#100, unspecified partner, PLC passive):
+           // BSEND R_ID 1 when a client sets sendReq (sendSize bytes, 16 by default, up to
+           // 2000: more than one PDU); BRCV R_ID 2 counts the blocks it gets
+           IF "PartnerData".sendSize <= 0 OR "PartnerData".sendSize > 2000 THEN
+               "PartnerData".sendSize := 16;
+           END_IF;
+           "PartnerData".sendLen := INT_TO_WORD("PartnerData".sendSize);
+           FOR #i := 2 TO 1999 DO
+               "PartnerData".sendBuf[#i] := INT_TO_BYTE(#i MOD 251);
+           END_FOR;
+           "PartnerData".sendBuf[0] := 16#AB;
+           "PartnerData".sendBuf[1] := DINT_TO_BYTE("PartnerData".sendCount);
+           #sender(REQ := "PartnerData".sendReq, ID := 16#100, R_ID := 1, SD_1 := "PartnerData".sendBuf, LEN := "PartnerData".sendLen);
+           IF #sender.DONE THEN
+               "PartnerData".sendReq := FALSE;
+               "PartnerData".sendCount := "PartnerData".sendCount + 1;
+           END_IF;
+           IF #sender.ERROR THEN
+               "PartnerData".sendReq := FALSE;
+               "PartnerData".sendError := TRUE;
+               "PartnerData".sendStatus := #sender.STATUS;
+           END_IF;
+           #receiver(EN_R := TRUE, ID := 16#100, R_ID := 2, RD_1 := "PartnerData".recvBuf, LEN := "PartnerData".recvLen);
+           IF #receiver.NDR THEN
+               "PartnerData".recvCount := "PartnerData".recvCount + 1;
+           END_IF;
+           IF #receiver.ERROR THEN
+               "PartnerData".recvError := TRUE;
+               "PartnerData".recvStatus := #receiver.STATUS;
+           END_IF;
+    END_NETWORK
+END_FUNCTION_BLOCK

@@ -24,7 +24,9 @@ to the PLC, so use them only with a simulated or test CPU.
 | DB4 `TestSub` | values that change: `tick` (+1 every 100 ms), `toggle` (every 1 s), `slow` (every 5 s), `rSine`; `sp` / `echo` (the PLC copies `sp` to `echo`: a write shows in the next read or notification); `alarmReq`, `alarmVal` (alarm `alReq`) |
 | FB1 `AlarmGen` | two Program_Alarm: `alReq` on `"TestSub".alarmReq` with SD_1 = `alarmVal`, alarm class "Acknowledgement" (needs acknowledgement, see below); `alAuto` comes and goes every 5 s with SD_1 = `tick`, default class (no acknowledgement) |
 | DB5 `AlarmGen_DB` | instance DB of `AlarmGen` |
-| OB1 `Main` | one SCL network: the timer, the values of `TestSub`, the `sp` -> `echo` copy, the call of `AlarmGen_DB` |
+| DB6 `PartnerData` | BSEND/BRCV test data: `sendReq`, `sendSize` (bytes, 16 by default, up to 2000), `sendBuf` (0xAB, the send count, then `i MOD 251`), `sendCount`, `recvBuf` (2000 bytes), `recvCount`, status fields |
+| FB2 `PartnerComm` / DB7 `PartnerComm_DB` | `BSEND` R_ID 1 when a client sets `sendReq`, `BRCV` R_ID 2 always ready, over the S7 connection ID 16#100 |
+| OB1 `Main` | one SCL network: the timer, the values of `TestSub`, the `sp` -> `echo` copy, the calls of `AlarmGen_DB` and `PartnerComm_DB` |
 
 The alarms have no texts (the TIA Portal Openness API cannot write instance texts); add them in
 the TIA Portal alarm editor to test the texts.
@@ -49,9 +51,15 @@ With TIA Portal V21 and the TIA Portal Openness MCP server (or by hand in TIA Po
    Portal, `powershell -ExecutionPolicy Bypass -File test/plcsim/set-alarm-class.ps1 -ProjectPath
    <path>.ap21` (imports `alarm-classes.xlsx` with TIA Portal Openness; accept the Openness access
    dialog), or set it in TIA Portal (FB `AlarmGen`, alarm `alReq`, alarm class "Acknowledgement").
-4. `CompileAndDiagnosePlc`, `SaveProject`.
-5. `DownloadToPlc` with `pgPcInterface = "PLCSIM"`: the automatic pick of the PG/PC interface can
-   take another adapter (for example Hyper-V) and fail with "Connect to module failed".
+4. S7 connection for BSEND/BRCV (`S7_Connection_1`, ID 16#100, PLC TSAP 10.01, partner TSAP
+   03.00, PLC passive): `powershell -ExecutionPolicy Bypass -File test/plcsim/add-s7-connection.ps1
+   -ProjectPath <path>.ap21 -PartnerIp <PC address on the PLCSIM network>` (the TIA Portal MCP
+   has no tool for connections). The PLC interface must be in a subnet (MCP `EnsureSubnet`).
+5. `CompileAndDiagnosePlc`, `SaveProject`.
+6. `DownloadToPlc` with `pgPcInterface = "PLCSIM"`: the automatic pick of the PG/PC interface can
+   take another adapter (for example Hyper-V) and fail with "Connect to module failed". It loads
+   the software only: after a change of the S7 connection or the network settings, use
+   `test/plcsim/download-hw-sw.ps1 -ProjectPath <path>.ap21` (hardware and software).
 
 To export the program again after a change: `ExportBlocksAsDocuments` to this directory.
 
@@ -65,6 +73,7 @@ address (default 192.168.0.1).
 |---|---|
 | `node test/plcsim/live_watch.js [push\|poll]` | `s7 watch` on `TestSub` and `TestOpt.sText` (interval 100 ms), writes `sp = 1001` and a String with `s7 write`, prints the messages |
 | `node test/plcsim/live_alarms.js [auto\|tia\|reference]` | `s7 alarms`, writes `alarmReq = true` / `false` with `s7 write`, acknowledges `alReq` (and `alAuto`: refused) with `msg.ack`, then lets `alReq` go before its acknowledgement and acknowledges it with `"all"`; prints the alarm events and the node status |
+| `node test/plcsim/live_partner.js [bytes]` | S7 partner endpoint: `s7 brcv` gets the PLC BSEND (`sendSize` = bytes, default 1800: fragmented), `s7 bsend` sends a block to the PLC BRCV; checks both against `PartnerData` (read with S7CommPlus); prints `RESULT ok` |
 | `node test/plcsim/live_cert.js` | reads the PLC certificate (`s7 info` `certificate`), then connects with a pinned fingerprint, with the certificate as trusted certificate, with a wrong fingerprint and with a wrong certificate name; prints the state of each and `RESULT ok` |
 
 Expected: push mode sends all tags first, then `tick` / `rSine` every 100 ms and the writes about

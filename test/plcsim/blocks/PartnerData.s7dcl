@@ -1,0 +1,21 @@
+﻿{
+    S7_Optimized := "TRUE";
+    S7_StandardRetain := "FALSE";
+    S7_Version := "0.1"
+}
+DATA_BLOCK PartnerData
+    VAR
+        sendReq : Bool;
+        sendBuf : Array[0..1999] of Byte;
+        sendLen : Word;
+        sendSize : Int;
+        sendCount : DInt;
+        sendError : Bool;
+        sendStatus : Word;
+        recvBuf : Array[0..1999] of Byte;
+        recvLen : Word;
+        recvCount : DInt;
+        recvError : Bool;
+        recvStatus : Word;
+    END_VAR
+END_DATA_BLOCK

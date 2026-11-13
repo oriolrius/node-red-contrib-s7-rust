@@ -1,0 +1,8 @@
+{
+  "s7rs-brcv": {
+    "label": { "name": "Name", "endpoint": "PLC (S7 partner)" },
+    "placeholder": { "rid": "empty: every R_ID" },
+    "status": { "count": "__n__ blocks" },
+    "errors": { "subscribe": "BRCV: __error__" }
+  }
+}

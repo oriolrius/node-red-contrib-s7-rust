@@ -21,6 +21,9 @@ pub mod log;
 pub mod metrics;
 pub mod nodes7addr;
 mod optimize;
+pub mod partner;
+#[cfg(any(test, feature = "fakecpu"))]
+pub mod partner_fake;
 pub mod poll;
 pub mod szl;
 pub mod textfmt;
