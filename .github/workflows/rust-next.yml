@@ -1,0 +1,31 @@
+name: Rust next stable
+
+# Early warning, not a required check: fmt, clippy and the tests on the newest
+# stable Rust. When it fails, move the pinned toolchain (rust-toolchain.toml,
+# ci.yml, release.yml) in its own pull request before it blocks other work.
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust-next:
+    name: Rust (latest stable, early warning)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - name: Use the latest stable instead of rust-toolchain.toml
+        run: rm rust-toolchain.toml && rustc --version
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --features s7plus/fake,s7/fakecpu,s7napi/fake -- -D warnings
+      - run: cargo test --workspace --features s7plus/fake
