@@ -1,0 +1,119 @@
+[
+  {
+    "id": "c6",
+    "type": "comment",
+    "name": "BSEND / BRCV with an S7 connection",
+    "info": "In TIA Portal: Devices & networks > Connections: add an S7 connection to an unspecified partner\n(partner address = the Node-RED host), not 'active connection setup' on the PLC side.\nSet the endpoint protocol to 'S7 partner' and the TSAPs of the connection\n(local = the partner TSAP, for example 03.00; remote = the PLC TSAP, for example 10.01).\n\ns7 brcv sends a message for each block of a PLC BSEND (msg.payload Buffer, msg.rid).\ns7 bsend sends msg.payload (Buffer, byte array or string) to a PLC BRCV with R_ID 1.\nThe bsend node writes to the PLC.",
+    "x": 240,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "rx6",
+    "type": "s7rs-brcv",
+    "name": "",
+    "endpoint": "ep6",
+    "rid": "",
+    "x": 140,
+    "y": 100,
+    "wires": [
+      [
+        "d6"
+      ]
+    ]
+  },
+  {
+    "id": "d6",
+    "type": "debug",
+    "name": "blocks from the PLC",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 380,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "i6",
+    "type": "inject",
+    "name": "send 4 bytes",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "[1,2,3,4]",
+    "payloadType": "json",
+    "x": 150,
+    "y": 160,
+    "wires": [
+      [
+        "tx6"
+      ]
+    ]
+  },
+  {
+    "id": "tx6",
+    "type": "s7rs-bsend",
+    "name": "",
+    "endpoint": "ep6",
+    "rid": "1",
+    "x": 340,
+    "y": 160,
+    "wires": [
+      [
+        "d7"
+      ]
+    ]
+  },
+  {
+    "id": "d7",
+    "type": "debug",
+    "name": "sent",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "s7",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 520,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "ep6",
+    "type": "s7rs-endpoint",
+    "name": "PLC (S7 partner)",
+    "protocol": "s7partner",
+    "host": "192.168.0.1",
+    "port": 102,
+    "cpu": "1500",
+    "rack": "",
+    "slot": "",
+    "link": "",
+    "localTsap": "03.00",
+    "remoteTsap": "10.01",
+    "pdu": "",
+    "timeout": 5000,
+    "attempts": 3,
+    "reconnect": 5000,
+    "gap": 5,
+    "byteOrder": "big",
+    "logLevel": "warn",
+    "tsap": "SIMATIC-ROOT-HMI",
+    "tls": false,
+    "username": ""
+  }
+]
