@@ -131,13 +131,12 @@ This map shows each protocol function and where it is available. It is strict: a
 | PLC hot / cold start | job 0x28, PI service `P_PROGRAM` | 🔒 | — |
 | Block download, delete | jobs 0x1A, 0x1B, 0x1C, PI service `_DELE` | ❌ | — |
 | Compress, copy RAM to ROM | PI services `_GARB`, `_MODU` | ❌ | — |
-| Cyclic data | userdata group 2 | ❌ | — (`s7 watch` uses polling) |
-| Alarms and messages | userdata group 4 alarm subfunctions, NOTIFY, ALARM_S/ALARM_8 | ❌ | — |
-| Protection level password | userdata group 5 (security) | ❌ | — |
+| Cyclic data | userdata group 2 (an S7-1200/1500 answers 0x8104, not supported: S7-300/400 only) | ❌ | — (`s7 watch` uses polling; S7CommPlus: mode "PLC subscription") |
+| Alarms and messages | userdata group 4 alarm subfunctions, NOTIFY, ALARM_S/ALARM_8 (an S7-1500 answers 0x8104: S7-300/400 only) | ❌ | — (S7-1500: `s7 alarms` over S7CommPlus) |
+| Protection level password | userdata group 5 (security) (an S7-1500 answers 0x8104: S7-300/400 only) | ❌ | — (S7-1500: S7CommPlus legitimation) |
 | Programmer commands, force | userdata group 1 | ❌ | — |
 | BSEND/BRCV | userdata group 6 (type/group 0x46 / 0x86), fragments of the PDU size, blocks up to 65534 bytes, over an S7 connection (Node-RED active, TSAPs of the connection) | ✅ | `s7 bsend`, `s7 brcv` (endpoint protocol "S7 partner") |
 | USEND/URCV | userdata with the R_ID in the parameters (syntax id 0x13), one to four areas in one PDU, not acknowledged, on the same S7 connection | ✅ | `s7 usend`, `s7 urcv` (endpoint protocol "S7 partner") |
-| USEND/URCV | userdata group 6, unacknowledged | ❌ | — |
 | S7 routing to other subnets | COTP with routing parameters | ❌ | — |
 
 ### S7CommPlus (crate `s7plus`)

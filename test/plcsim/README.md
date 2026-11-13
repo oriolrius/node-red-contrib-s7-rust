@@ -37,6 +37,10 @@ Notes:
   `t(IN := NOT t.Q, ...)` does not work in SCL: `tick` comes from `ET` of a timer that runs all
   the time.
 - A Bool of an optimized DB has the softdatatype BBool on the wire.
+- PLCSIM Advanced simulates S7-1500 only. Its S7comm answers error 0x8104 (not supported) to
+  the S7-300/400 services cyclic data (userdata group 2), message service / ALARM_S and alarm
+  query (group 4) and the protection password (group 5): test those on an S7-300/400 (or
+  S7-PLCSIM, not PLCSIM Advanced). USEND/URCV works.
 
 ## Load the program
 
