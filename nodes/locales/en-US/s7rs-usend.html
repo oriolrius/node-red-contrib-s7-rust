@@ -1,0 +1,26 @@
+<script type="text/html" data-help-name="s7rs-usend">
+  <p>Sends <code>msg.payload</code> to a PLC <code>URCV</code> (S7 communication over an S7
+    connection, <code>USEND</code> / <code>URCV</code>). <b>This writes to the PLC.</b> The endpoint
+    must use the protocol <i>S7 partner</i>.</p>
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">Buffer | array | string</span></dt>
+    <dd>one area (a Buffer, an array of bytes, or a string sent as UTF-8), or an array of 1 to 4
+      areas (Buffers or strings) for RD_1 to RD_4 of the URCV.</dd>
+    <dt class="optional">rid <span class="property-type">number</span></dt>
+    <dd>the R_ID of the URCV call in the PLC (when the node has no R_ID).</dd>
+  </dl>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>s7 <span class="property-type">object</span></dt>
+    <dd><code>rid</code>, <code>bytes</code> (the length of each area), <code>ms</code>: the
+      message passes when the USEND is sent.</dd>
+  </dl>
+  <h3>Details</h3>
+  <p>USEND is not acknowledged: the PLC gives no answer, also when no URCV takes the data. The
+    URCV takes it only when it is ready (<code>EN_R = TRUE</code>), the R_ID is the same and each
+    area has the length of its RD_i: an S7-1500 needs the exact length of an
+    <code>Array of Byte</code> (send 100 bytes to <code>Array[0..99] of Byte</code>). Check
+    <code>NDR</code> or a counter in the PLC. All areas together must fit in one PDU (about the PDU
+    size minus 24 bytes, minus 4 per area); use <code>s7 bsend</code> for larger data.</p>
+</script>

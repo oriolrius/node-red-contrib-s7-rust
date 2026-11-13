@@ -1,0 +1,25 @@
+<script type="text/html" data-help-name="s7rs-urcv">
+  <p>Receives the data that the PLC sends with <code>USEND</code> (S7 communication over an S7
+    connection). One message per USEND. The endpoint must use the protocol <i>S7 partner</i>.</p>
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">Buffer | array</span></dt>
+    <dd>the bytes of the area when the USEND has one area (SD_1); an array of Buffers when it has
+      more (SD_1 to SD_4).</dd>
+    <dt>areas <span class="property-type">array</span></dt>
+    <dd><code>{type, data}</code> for each area: <code>type</code> is the S7 transport size (3 bit,
+      4 byte/word/dword, 5 integer, 7 real, 9 octet string), <code>data</code> a Buffer.</dd>
+    <dt>rid <span class="property-type">number</span></dt>
+    <dd>the R_ID of the USEND call; also in <code>msg.topic</code> as text.</dd>
+    <dt>ts <span class="property-type">string</span></dt>
+    <dd>receive time (ISO, UTC).</dd>
+  </dl>
+  <h3>Details</h3>
+  <p><b>R_ID</b>: only USENDs with this R_ID; empty: every USEND. Several nodes on one endpoint each
+    get every USEND.</p>
+  <p>The PLC sends only while Node-RED is connected: a USEND without a connection ends with an error
+    in the PLC (STATUS of USEND). USENDs that come before the first <code>s7 urcv</code> node of the
+    endpoint starts go to that node (at most 100).</p>
+  <p>Decode the bytes with a function node (<code>msg.payload[1].readInt16BE(0)</code>, …): the PLC
+    sends its SD areas in S7 byte order (big endian).</p>
+</script>

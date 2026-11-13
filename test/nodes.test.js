@@ -18,7 +18,7 @@ const RED_MODULE = process.env.S7RS_NODE_RED || 'node-red';
 helper.init(require.resolve(RED_MODULE));
 const fakes = loadAddon();
 
-const NODES = ['endpoint', 'read', 'write', 'watch', 'info', 'alarms', 'bsend', 'brcv'].map((n) => require(`../nodes/s7rs-${n}.js`));
+const NODES = ['endpoint', 'read', 'write', 'watch', 'info', 'alarms', 'bsend', 'brcv', 'usend', 'urcv'].map((n) => require(`../nodes/s7rs-${n}.js`));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function until(cond, ms = 5000) {
@@ -496,6 +496,50 @@ test('S7 partner: s7 brcv and s7 bsend (BSEND/BRCV)', async () => {
     return one.length >= 2;
   }, 15000);
   assert.deepEqual([...one[1].payload], [7]);
+});
+
+test('S7 partner: s7 urcv and s7 usend (USEND/URCV)', async () => {
+  const addr = fakes.startFakePartner(240);
+  const [host, port] = addr.split(':');
+  await load({ protocol: 's7partner', host, port, localTsap: '03.00', remoteTsap: '10.01' }, [
+    { id: 'u', type: 's7rs-urcv', rid: '' },
+    { id: 'u3', type: 's7rs-urcv', rid: '3' },
+    { id: 'b', type: 's7rs-brcv', rid: '' },
+    { id: 'tx', type: 's7rs-usend', rid: '4' },
+  ]);
+  const all = collect('u');
+  const three = collect('u3');
+  const blocks = collect('b');
+  // PLC USEND -> both receivers (the second only R_ID 3); the brcv node gets only the BSEND.
+  // The first USEND (before the nodes subscribe) goes to the first urcv node.
+  await until(() => fakes.fakePartnerUsend(addr, 5, JSON.stringify([[4, [1, 2, 3]]])));
+  await until(() => all.length === 1);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(fakes.fakePartnerUsend(addr, 3, JSON.stringify([[4, [0xcd, 0, 2, 3, 4, 5, 6, 7, 8, 9]], [5, [0, 3]]])));
+  assert.ok(fakes.fakePartnerBsend(addr, 1, [9]));
+  await until(() => all.length === 2 && three.length === 1 && blocks.length === 1);
+  assert.deepEqual(three[0].payload.map((b) => [...b]), [[0xcd, 0, 2, 3, 4, 5, 6, 7, 8, 9], [0, 3]]);
+  assert.deepEqual(three[0].areas.map((a) => a.type), [4, 5]);
+  assert.equal(three[0].topic, '3');
+  assert.ok(Buffer.isBuffer(all[0].payload));
+  assert.deepEqual([all[0].rid, [...all[0].payload]], [5, [1, 2, 3]]);
+  assert.equal(all[1].rid, 3);
+  assert.deepEqual([...blocks[0].payload], [9]);
+
+  // s7 usend: one area, several areas; msg.rid overrides
+  const out = await ask('tx', { payload: Buffer.alloc(100, 7) });
+  assert.deepEqual([out.s7.rid, out.s7.bytes], [4, [100]]);
+  await ask('tx', { payload: ['hi', [1, 2, 3]], rid: 6 });
+  await until(() => JSON.parse(fakes.fakePartnerUsends(addr)).length === 2);
+  const got = JSON.parse(fakes.fakePartnerUsends(addr));
+  assert.deepEqual([got[0].rid, got[0].areas[0][0], got[0].areas[0][1].length], [4, 4, 100]);
+  assert.deepEqual(got[1], { rid: 6, areas: [[4, [104, 105]], [4, [1, 2, 3]]] });
+  // bad input; too large for the PDU
+  await assert.rejects(ask('tx', { payload: {} }), /array of 1 to 4/);
+  await assert.rejects(ask('tx', { payload: [[1], [2], [3], [4], [5]] }), /array of 1 to 4/);
+  await assert.rejects(ask('tx', { payload: [Buffer.alloc(0)] }), /array of 1 to 4/);
+  await assert.rejects(ask('tx', { payload: [1], rid: -1 }), /R_ID/);
+  await assert.rejects(ask('tx', { payload: Buffer.alloc(300) }), /PDU/);
 });
 
 test('S7CommPlus: s7 info resolve and links', async () => {

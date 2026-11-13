@@ -1,7 +1,7 @@
 //! S7 partner (BSEND / BRCV) against the fake PLC.
 use std::time::{Duration, Instant};
 
-use crate::partner::{Partner, MAX_BLOCK};
+use crate::partner::{Area, Block, Message, Partner, Usend, MAX_BLOCK};
 use crate::partner_fake::{FakePartnerPlc, PARTNER_TSAP, PLC_TSAP};
 use crate::wire::DialOptions;
 
@@ -32,7 +32,7 @@ fn bsend_and_brcv_with_fragments() {
     let mut blocks = Vec::new();
     let t0 = Instant::now();
     while blocks.len() < 2 && t0.elapsed() < Duration::from_secs(5) {
-        if let Some(b) = p.recv(Duration::from_millis(100)).unwrap() {
+        if let Some(Message::Block(b)) = p.recv(Duration::from_millis(100)).unwrap() {
             blocks.push(b);
         }
     }
@@ -88,4 +88,84 @@ fn pending_blocks_are_bounded() {
         n += 1;
     }
     assert!(n <= MAX_PENDING, "{n}");
+}
+
+fn recv_all(p: &mut Partner, n: usize) -> Vec<Message> {
+    let mut out = Vec::new();
+    let t0 = Instant::now();
+    while out.len() < n && t0.elapsed() < Duration::from_secs(5) {
+        if let Some(m) = p.recv(Duration::from_millis(100)).unwrap() {
+            out.push(m);
+        }
+    }
+    out
+}
+
+#[test]
+fn usend_and_urcv() {
+    let f = FakePartnerPlc::start(240);
+    let mut p = Partner::connect(&opts(f.addr())).unwrap();
+    // PLC -> partner: the frame of PLCSIM (10 bytes + an Int), and a BSEND in between
+    let a10 = Area { tsize: 0x04, data: vec![0xcd, 0, 2, 3, 4, 5, 6, 7, 8, 9] };
+    let int = Area { tsize: 0x05, data: vec![0x00, 0x03] };
+    assert!(f.usend(3, vec![a10.clone(), int.clone()]));
+    assert!(f.bsend(1, vec![7]));
+    let odd = Area { tsize: 0x04, data: vec![1, 2, 3] };
+    assert!(f.usend(5, vec![odd.clone(), Area { tsize: 0x09, data: vec![9] }]));
+    let got = recv_all(&mut p, 3);
+    assert_eq!(
+        got,
+        vec![
+            Message::Usend(Usend { r_id: 3, areas: vec![a10.clone(), int] }),
+            Message::Block(Block { r_id: 1, data: vec![7] }),
+            Message::Usend(Usend { r_id: 5, areas: vec![odd.clone(), Area { tsize: 0x09, data: vec![9] }] }),
+        ],
+        "{:?}",
+        f.errors()
+    );
+    // partner -> PLC
+    p.usend(4, std::slice::from_ref(&a10)).unwrap();
+    p.usend(6, &[odd.clone(), a10.clone()]).unwrap();
+    p.send(2, &[1]).unwrap(); // a BSEND after it: the USENDs were sent before
+    let u = f.usends();
+    assert_eq!(u, vec![Usend { r_id: 4, areas: vec![a10.clone()] }, Usend { r_id: 6, areas: vec![odd, a10.clone()] }]);
+    // limits
+    assert!(p.usend(4, &[]).is_err());
+    assert!(p.usend(4, &vec![a10.clone(); 5]).is_err());
+    assert!(p.usend(4, &[Area { tsize: 0x04, data: vec![] }]).is_err());
+    let e = p.usend(4, &[Area { tsize: 0x04, data: vec![0; 230] }]).unwrap_err().to_string();
+    assert!(e.contains("PDU"), "{e}");
+    p.usend(4, &[Area { tsize: 0x04, data: vec![0; 240 - 28] }]).unwrap();
+    assert!(f.errors().is_empty(), "{:?}", f.errors());
+}
+
+#[test]
+fn malformed_usend_is_an_error() {
+    use crate::partner::parse_usend;
+    let frame = |p: &str, d: &str| {
+        let h = |s: &str| (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect::<Vec<u8>>();
+        let (p, d) = (h(p), h(d));
+        let mut f = vec![0x02, 0xF0, 0x80, 0x32, 0x07, 0, 0, 0, 0];
+        f.extend_from_slice(&(p.len() as u16).to_be_bytes());
+        f.extend_from_slice(&(d.len() as u16).to_be_bytes());
+        f.extend(p);
+        f.extend(d);
+        f
+    };
+    let p = "000112061300".to_string() + "00000003";
+    // PLCSIM bytes
+    let ok = frame(&p, "ff02000200040050cd000203040506070809000500100000" /* PLCSIM, usendInt 0 */);
+    assert_eq!(parse_usend(&ok).unwrap().unwrap().areas.len(), 2);
+    for bad in [
+        "ff020000",             // no areas
+        "ff020005",             // 5 areas
+        "ff0200010004",         // truncated area header
+        "ff02000100040050cd00", // 10 bytes announced, 2 present
+        "ff0200010004000801ee", // extra bytes after the areas
+        "00020001000400080100", // not FF
+    ] {
+        assert!(parse_usend(&frame(&p, bad)).is_err(), "accepted {bad}");
+    }
+    // a BSEND frame is not a USEND
+    assert!(parse_usend(&frame("000112081246010000000000", "0a000000")).unwrap().is_none());
 }

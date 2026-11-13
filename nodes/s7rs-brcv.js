@@ -14,7 +14,7 @@ module.exports = function (RED) {
     let count = 0;
 
     const onBlocks = (ev) => {
-      if (ev.sub !== node.id) return;
+      if (ev.sub !== node.id || (ev.kind && ev.kind !== 'bsend')) return;
       if (want !== null && ev.rid !== want) return;
       count += 1;
       node.status({ fill: 'green', shape: 'dot', text: text(RED, 's7rs-brcv.status.count', { n: count }) });

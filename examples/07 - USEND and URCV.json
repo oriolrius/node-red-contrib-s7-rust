@@ -1,0 +1,119 @@
+[
+  {
+    "id": "c7",
+    "type": "comment",
+    "name": "USEND / URCV with an S7 connection",
+    "info": "The same S7 connection as for BSEND/BRCV (see the example 06): endpoint protocol 'S7 partner'.\n\ns7 urcv sends a message for each PLC USEND: msg.payload is a Buffer for one area (SD_1),\nan array of Buffers for two to four areas; msg.areas has the transport size of each area.\ns7 usend sends msg.payload to a PLC URCV with R_ID 4: one area or an array of up to four.\nAn S7-1500 URCV takes it only when each area has the exact length of its RD_i\n(here 8 bytes for an Array[0..7] of Byte). USEND has no acknowledgement.\nThe usend node writes to the PLC.",
+    "x": 240,
+    "y": 40,
+    "wires": []
+  },
+  {
+    "id": "rx7",
+    "type": "s7rs-urcv",
+    "name": "",
+    "endpoint": "ep7",
+    "rid": "",
+    "x": 140,
+    "y": 100,
+    "wires": [
+      [
+        "d71"
+      ]
+    ]
+  },
+  {
+    "id": "d71",
+    "type": "debug",
+    "name": "USENDs from the PLC",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "true",
+    "targetType": "full",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 380,
+    "y": 100,
+    "wires": []
+  },
+  {
+    "id": "i7",
+    "type": "inject",
+    "name": "send 8 bytes",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "[1,2,3,4,5,6,7,8]",
+    "payloadType": "json",
+    "x": 150,
+    "y": 160,
+    "wires": [
+      [
+        "tx7"
+      ]
+    ]
+  },
+  {
+    "id": "tx7",
+    "type": "s7rs-usend",
+    "name": "",
+    "endpoint": "ep7",
+    "rid": "4",
+    "x": 340,
+    "y": 160,
+    "wires": [
+      [
+        "d72"
+      ]
+    ]
+  },
+  {
+    "id": "d72",
+    "type": "debug",
+    "name": "sent",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "s7",
+    "targetType": "msg",
+    "statusVal": "",
+    "statusType": "auto",
+    "x": 520,
+    "y": 160,
+    "wires": []
+  },
+  {
+    "id": "ep7",
+    "type": "s7rs-endpoint",
+    "name": "PLC (S7 partner)",
+    "protocol": "s7partner",
+    "host": "192.168.0.1",
+    "port": 102,
+    "cpu": "1500",
+    "rack": "",
+    "slot": "",
+    "link": "",
+    "localTsap": "03.00",
+    "remoteTsap": "10.01",
+    "pdu": "",
+    "timeout": 5000,
+    "attempts": 3,
+    "reconnect": 5000,
+    "gap": 5,
+    "byteOrder": "big",
+    "logLevel": "warn",
+    "tsap": "SIMATIC-ROOT-HMI",
+    "tls": false,
+    "username": ""
+  }
+]

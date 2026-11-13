@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- USEND / URCV on the S7 partner endpoint: two nodes. `s7 urcv` sends a message for each PLC
+  `USEND` (`msg.payload` Buffer for one area, an array of Buffers for two to four; `msg.areas`
+  with the transport size of each area; filter by R_ID); `s7 usend` sends `msg.payload` (a
+  Buffer, byte array or string, or an array of up to four) to a PLC `URCV`. USEND is not
+  acknowledged and must fit in one PDU. An S7-1500 URCV takes the data only when each area has
+  the exact length of its RD_i.
+- Rust crate `s7`: `partner::Partner::usend`, `Partner::recv` returns `Message::Block` or
+  `Message::Usend` (before: `Block`), `Area`, `Usend`; the fake partner PLC sends and receives
+  USENDs. The frame layout was taken from PLCSIM Advanced V8 (S7-1500, FW S4.1): parameters
+  `00 01 12 06 13 00 <R_ID>`, data `FF 02 <count>` and per area `00 <transport size> <length>`.
+- `test/plcsim`: USEND R_ID 3 / URCV R_ID 4 in FB `PartnerComm`, `live_usend.js`; example flow
+  "07 - USEND and URCV". Tested on PLCSIM Advanced V8: both ways.
+
 ## [1.3.0] - 2026-11-13
 
 ### Added

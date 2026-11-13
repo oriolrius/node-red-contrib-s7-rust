@@ -2,7 +2,8 @@
 //! the COTP connection with the TSAPs of its S7 connection, negotiates a
 //! small PDU (so blocks are fragmented), receives BSEND blocks (BRCV,
 //! acknowledged as an S7-1500 does: sequence = IDSeq, the PDU reference of the
-//! request) and sends BSEND blocks on request.
+//! request) and sends BSEND blocks on request. It also sends USENDs (the
+//! frames of an S7-1500, from PLCSIM) and keeps the USENDs it gets (URCV).
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -12,11 +13,18 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use crate::partner::Block;
+use crate::partner::{Area, Block, Usend};
+
+enum Out {
+    Bsend(Block),
+    Usend(Usend),
+}
 
 #[derive(Default)]
 struct State {
     received: Vec<Block>,
+    /// USENDs of the partner (URCV).
+    usends: Vec<Usend>,
     /// BRCV refuses this R_ID (error 0x0001 in the answer).
     refuse: Option<u32>,
     conns: Vec<TcpStream>,
@@ -27,7 +35,7 @@ struct State {
 pub struct FakePartnerPlc {
     addr: String,
     state: Arc<Mutex<State>>,
-    out: Arc<Mutex<Option<Sender<Block>>>>,
+    out: Arc<Mutex<Option<Sender<Out>>>>,
     stop: Arc<AtomicBool>,
 }
 
@@ -69,7 +77,7 @@ impl FakePartnerPlc {
         let l = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = l.local_addr().expect("addr").to_string();
         let state = Arc::new(Mutex::new(State::default()));
-        let out: Arc<Mutex<Option<Sender<Block>>>> = Arc::new(Mutex::new(None));
+        let out: Arc<Mutex<Option<Sender<Out>>>> = Arc::new(Mutex::new(None));
         let stop = Arc::new(AtomicBool::new(false));
         let (st, o, sp) = (state.clone(), out.clone(), stop.clone());
         thread::spawn(move || {
@@ -110,7 +118,17 @@ impl FakePartnerPlc {
 
     /// The PLC program calls BSEND with this block (on the open connection).
     pub fn bsend(&self, r_id: u32, data: Vec<u8>) -> bool {
-        self.out.lock().unwrap().as_ref().is_some_and(|tx| tx.send(Block { r_id, data }).is_ok())
+        self.out.lock().unwrap().as_ref().is_some_and(|tx| tx.send(Out::Bsend(Block { r_id, data })).is_ok())
+    }
+
+    /// The PLC program calls USEND with these areas.
+    pub fn usend(&self, r_id: u32, areas: Vec<Area>) -> bool {
+        self.out.lock().unwrap().as_ref().is_some_and(|tx| tx.send(Out::Usend(Usend { r_id, areas })).is_ok())
+    }
+
+    /// The USENDs the URCV got.
+    pub fn usends(&self) -> Vec<Usend> {
+        self.state.lock().unwrap().usends.clone()
     }
 
     /// Closes the open connections (a PLC restart).
@@ -133,7 +151,7 @@ impl Drop for FakePartnerPlc {
     }
 }
 
-fn serve(mut s: TcpStream, pdu: u16, st: &Arc<Mutex<State>>, rx: Receiver<Block>) -> std::io::Result<()> {
+fn serve(mut s: TcpStream, pdu: u16, st: &Arc<Mutex<State>>, rx: Receiver<Out>) -> std::io::Result<()> {
     // COTP CR: accept only the TSAPs of the S7 connection
     let cr = read_tpkt(&mut s)?;
     let find = |code: u8| -> Option<u16> {
@@ -165,7 +183,25 @@ fn serve(mut s: TcpStream, pdu: u16, st: &Arc<Mutex<State>>, rx: Receiver<Block>
     let mut rx_block: Option<Block> = None;
     loop {
         // a BSEND of the PLC program
-        if let Ok(b) = rx.try_recv() {
+        let next = rx.try_recv();
+        if let Ok(Out::Usend(u)) = &next {
+            // as PLCSIM sends it: PDU reference 0, R_ID in the parameters
+            let mut p = vec![0x00, 0x01, 0x12, 0x06, 0x13, 0x00];
+            p.extend_from_slice(&u.r_id.to_be_bytes());
+            let mut d = vec![0xFF, 0x02];
+            d.extend_from_slice(&(u.areas.len() as u16).to_be_bytes());
+            for (i, a) in u.areas.iter().enumerate() {
+                let len = if (0x03..=0x05).contains(&a.tsize) { a.data.len() * 8 } else { a.data.len() };
+                d.extend_from_slice(&[0x00, a.tsize]);
+                d.extend_from_slice(&(len as u16).to_be_bytes());
+                d.extend_from_slice(&a.data);
+                if a.data.len() % 2 == 1 && i + 1 < u.areas.len() {
+                    d.push(0x00);
+                }
+            }
+            s.write_all(&userdata(0, &p, &d))?;
+        }
+        if let Ok(Out::Bsend(b)) = next {
             let max = pdu as usize - (10 + 12 + 12 + 2);
             let multi = b.data.len() > max;
             let id_seq: u8 = if multi { 0x21 } else { 0 };
@@ -191,7 +227,7 @@ fn serve(mut s: TcpStream, pdu: u16, st: &Arc<Mutex<State>>, rx: Receiver<Block>
                 s.set_read_timeout(Some(Duration::from_secs(3)))?;
                 let ack = loop {
                     let f = read_tpkt(&mut s)?;
-                    if f.len() > 18 && f[4] == 0x07 && f[18] == 0x46 {
+                    if (f.len() > 18 && f[4] == 0x07 && f[18] == 0x46) || matches!(crate::partner::parse_usend(&f), Ok(Some(_))) {
                         brcv(&mut s, &f, st, &mut rx_block)?;
                         continue;
                     }
@@ -223,6 +259,10 @@ fn serve(mut s: TcpStream, pdu: u16, st: &Arc<Mutex<State>>, rx: Receiver<Block>
 /// One BSEND fragment of the partner: store it, acknowledge it like an
 /// S7-1500 (IDSeq as sequence, the PDU reference of the request).
 fn brcv(s: &mut TcpStream, f: &[u8], st: &Arc<Mutex<State>>, rx_block: &mut Option<Block>) -> std::io::Result<()> {
+    if let Ok(Some(u)) = crate::partner::parse_usend(f) {
+        st.lock().unwrap().usends.push(u);
+        return Ok(());
+    }
     if f.len() < 25 || f[4] != 0x07 || f[18] != 0x46 {
         return Ok(());
     }
