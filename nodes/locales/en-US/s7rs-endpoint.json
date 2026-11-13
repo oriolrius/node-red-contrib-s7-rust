@@ -28,7 +28,7 @@
     "protocol": {
       "s7": "S7comm (classic, PUT/GET)",
       "s7plus": "S7CommPlus (S7-1200/1500, symbols)",
-      "s7partner": "S7 partner (BSEND/BRCV over an S7 connection)"
+      "s7partner": "S7 partner (BSEND/BRCV, USEND/URCV over an S7 connection)"
     },
     "certVerify": {
       "none": "not checked",

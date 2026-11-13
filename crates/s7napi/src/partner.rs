@@ -1,7 +1,8 @@
 //! S7 partner device (protocol "s7partner"): BSEND / BRCV over an S7
-//! connection of the PLC (crate `s7`, module `partner`). The `s7 brcv`
-//! nodes poll the received blocks like the alarm subscriptions (one queue per
-//! node); `s7 bsend` calls the action "bsend".
+//! connection of the PLC (crate `s7`, module `partner`), and USEND / URCV
+//! on the same connection. The `s7 brcv` and `s7 urcv` nodes poll what the
+//! PLC sent like the alarm subscriptions (one queue per node, kind "bsend" or
+//! "usend"); `s7 bsend` / `s7 usend` call the actions "bsend" / "usend".
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
@@ -10,7 +11,7 @@ use std::time::{Duration, Instant};
 use napi::threadsafe_function::ThreadsafeFunctionCallMode;
 use serde_json::{json, Value as J};
 
-use s7::partner::{Block, Partner, MAX_BLOCK};
+use s7::partner::{Area, Message, Partner, MAX_AREAS, MAX_BLOCK};
 use s7::wire::DialOptions;
 
 use crate::device::{emit_log, AlarmPush, Device, Out};
@@ -25,13 +26,14 @@ pub struct PartnerDev {
     log: Option<LogFn>,
     last_try: Mutex<Option<Instant>>,
     reconnects: Mutex<u64>,
-    /// Received blocks per `s7 brcv` node (key of its poll loop).
-    queues: Mutex<HashMap<String, VecDeque<Block>>>,
-    /// Blocks received while no node listens (yet): the first node gets them
-    /// (at most BACKLOG, the oldest are dropped).
-    backlog: Mutex<VecDeque<Block>>,
-    /// Received and dropped blocks.
-    blocks: Mutex<(u64, u64)>,
+    /// Received messages (JSON) per `s7 brcv` / `s7 urcv` node (key of its
+    /// poll loop), with the kind the node takes.
+    queues: Mutex<HashMap<String, (&'static str, VecDeque<J>)>>,
+    /// Messages received while no node of their kind listens (yet): the first
+    /// node of that kind gets them (at most BACKLOG, the oldest are dropped).
+    backlog: Mutex<HashMap<&'static str, VecDeque<J>>>,
+    /// Received and dropped BSEND blocks, received and dropped USENDs.
+    blocks: Mutex<(u64, u64, u64, u64)>,
 }
 
 fn hex(b: &[u8]) -> String {
@@ -40,14 +42,14 @@ fn hex(b: &[u8]) -> String {
 
 fn unhex(s: &str) -> Result<Vec<u8>, String> {
     if !s.len().is_multiple_of(2) {
-        return Err("bsend: data must be hex with an even length".into());
+        return Err("data must be hex with an even length".into());
     }
     let digit = |c: u8| -> Result<u8, String> {
         match c {
             b'0'..=b'9' => Ok(c - b'0'),
             b'a'..=b'f' => Ok(c - b'a' + 10),
             b'A'..=b'F' => Ok(c - b'A' + 10),
-            _ => Err("bsend: data is not hex".to_string()),
+            _ => Err("data is not hex".to_string()),
         }
     };
     s.as_bytes().chunks(2).map(|p| Ok(digit(p[0])? << 4 | digit(p[1])?)).collect()
@@ -84,8 +86,8 @@ impl PartnerDev {
             last_try: Mutex::new(None),
             reconnects: Mutex::new(0),
             queues: Mutex::new(HashMap::new()),
-            backlog: Mutex::new(VecDeque::new()),
-            blocks: Mutex::new((0, 0)),
+            backlog: Mutex::new(HashMap::new()),
+            blocks: Mutex::new((0, 0, 0, 0)),
         };
         let res = OpenResult { protocol: "s7partner".into(), addr, rack: None, slot: None, link: None };
         Ok((std::sync::Arc::new(dev), res))
@@ -133,33 +135,50 @@ impl PartnerDev {
         }
     }
 
-    fn deliver(&self, b: Block) {
+    fn deliver(&self, m: Message) {
+        let (kind, j) = match &m {
+            Message::Block(b) => ("bsend", json!({"kind": "bsend", "rid": b.r_id, "data": hex(&b.data)})),
+            Message::Usend(u) => (
+                "usend",
+                json!({"kind": "usend", "rid": u.r_id,
+                    "areas": u.areas.iter().map(|a| json!({"type": a.tsize, "data": hex(&a.data)})).collect::<Vec<_>>()}),
+            ),
+        };
         let mut q = self.queues.lock().unwrap();
         let mut c = self.blocks.lock().unwrap();
-        c.0 += 1;
-        if q.is_empty() {
+        if kind == "bsend" {
+            c.0 += 1;
+        } else {
+            c.2 += 1;
+        }
+        let mut any = false;
+        for (k, v) in q.values_mut() {
+            if *k == kind {
+                any = true;
+                if v.len() < 1000 {
+                    v.push_back(j.clone());
+                }
+            }
+        }
+        if !any {
             let mut bl = self.backlog.lock().unwrap();
+            let bl = bl.entry(kind).or_default();
             if bl.len() >= BACKLOG {
                 bl.pop_front();
-                c.1 += 1;
-                emit_log(&self.log, &self.id, "warn", format!("BSEND block dropped: no s7 brcv node for {BACKLOG} blocks"));
+                if kind == "bsend" {
+                    c.1 += 1;
+                } else {
+                    c.3 += 1;
+                }
+                let node = if kind == "bsend" { "s7 brcv" } else { "s7 urcv" };
+                emit_log(&self.log, &self.id, "warn", format!("{kind} dropped: no {node} node for {BACKLOG} messages"));
             }
-            bl.push_back(b);
-            return;
-        }
-        for v in q.values_mut() {
-            if v.len() < 1000 {
-                v.push_back(b.clone());
-            }
+            bl.push_back(j);
         }
     }
 }
 
 const BACKLOG: usize = 100;
-
-fn block_json(b: &Block) -> J {
-    json!({"rid": b.r_id, "data": hex(&b.data)})
-}
 
 impl Device for PartnerDev {
     fn read(&self, tags: &[String]) -> (Vec<Out>, Option<String>) {
@@ -188,15 +207,22 @@ impl Device for PartnerDev {
     }
 
     /// Actions: status; bsend {rid, data (hex)}: sends a block to the PLC BRCV
-    /// with this R_ID (a write to the PLC).
+    /// with this R_ID; usend {rid, areas: [{data (hex), type?}]}: sends a USEND
+    /// to the PLC URCV with this R_ID (type: transport size, default 4 =
+    /// bytes). Both write to the PLC.
     fn call(&self, action: &str, a: &J) -> Result<J, String> {
         Ok(match action {
             "status" => {
                 let (st, det) = self.state.lock().unwrap().clone();
-                let (n, dropped) = *self.blocks.lock().unwrap();
+                let (n, dropped, un, udropped) = *self.blocks.lock().unwrap();
+                let q = self.queues.lock().unwrap();
+                let count = |kind: &str| q.values().filter(|(k, _)| *k == kind).count();
+                let receivers = json!({"bsend": count("bsend"), "usend": count("usend")});
+                drop(q);
                 json!({
                     "conn": self.id, "protocol": "s7partner", "addr": self.opts.addr, "state": st, "detail": det,
                     "reconnects": *self.reconnects.lock().unwrap(), "blocksReceived": n, "blocksDropped": dropped,
+                    "usendsReceived": un, "usendsDropped": udropped, "receivers": receivers,
                 })
             }
             "bsend" => {
@@ -205,7 +231,7 @@ impl Device for PartnerDev {
                     .and_then(|v| v.as_u64())
                     .filter(|r| *r <= u32::MAX as u64)
                     .ok_or("bsend: rid (0..4294967295) is required")?;
-                let data = unhex(a.get("data").and_then(|v| v.as_str()).unwrap_or(""))?;
+                let data = unhex(a.get("data").and_then(|v| v.as_str()).unwrap_or("")).map_err(|e| format!("bsend: {e}"))?;
                 if data.is_empty() || data.len() > MAX_BLOCK {
                     return Err(format!("bsend: {} bytes; a block has 1..{MAX_BLOCK} bytes", data.len()));
                 }
@@ -213,7 +239,37 @@ impl Device for PartnerDev {
                 self.with(|p| p.send(rid as u32, &data))?;
                 json!({"rid": rid, "bytes": n})
             }
-            x => return Err(format!("unknown action {x:?} for s7partner (status, bsend)")),
+            "usend" => {
+                let rid = a
+                    .get("rid")
+                    .and_then(|v| v.as_u64())
+                    .filter(|r| *r <= u32::MAX as u64)
+                    .ok_or("usend: rid (0..4294967295) is required")?;
+                let list = a.get("areas").and_then(|v| v.as_array()).ok_or("usend: areas (1 to 4) are required")?;
+                if list.is_empty() || list.len() > MAX_AREAS {
+                    return Err(format!("usend: {} areas; a USEND has 1..{MAX_AREAS}", list.len()));
+                }
+                let mut areas = Vec::with_capacity(list.len());
+                for (i, x) in list.iter().enumerate() {
+                    let data =
+                        unhex(x.get("data").and_then(|v| v.as_str()).unwrap_or("")).map_err(|e| format!("usend: area {}: {e}", i + 1))?;
+                    let tsize = match x.get("type") {
+                        None | Some(J::Null) => 0x04,
+                        Some(t) => {
+                            t.as_u64().filter(|t| *t <= 0xff).ok_or(format!("usend: area {}: type is a transport size (0..255)", i + 1))?
+                                as u8
+                        }
+                    };
+                    if data.is_empty() {
+                        return Err(format!("usend: area {} is empty", i + 1));
+                    }
+                    areas.push(Area { tsize, data });
+                }
+                let bytes: Vec<usize> = areas.iter().map(|a| a.data.len()).collect();
+                self.with(|p| p.usend(rid as u32, &areas))?;
+                json!({"rid": rid, "bytes": bytes})
+            }
+            x => return Err(format!("unknown action {x:?} for s7partner (status, bsend, usend)")),
         })
     }
 
@@ -223,22 +279,27 @@ impl Device for PartnerDev {
         }
     }
 
-    /// The blocks the PLC sent (BSEND) for the `s7 brcv` node `key`.
-    fn alarm_poll(&self, key: &str, _cfg: &J, wait: Duration) -> Result<AlarmPush, String> {
+    /// What the PLC sent for the node `key`: BSEND blocks for an `s7 brcv`
+    /// node (cfg.kind "bsend", the default), USENDs for an `s7 urcv` node
+    /// (cfg.kind "usend").
+    fn alarm_poll(&self, key: &str, cfg: &J, wait: Duration) -> Result<AlarmPush, String> {
+        let kind: &'static str = if cfg.get("kind").and_then(|v| v.as_str()) == Some("usend") { "usend" } else { "bsend" };
         {
             let mut q = self.queues.lock().unwrap();
             if !q.contains_key(key) {
-                // the first node gets the blocks that came before it
-                let first = q.is_empty();
-                let v = q.entry(key.to_string()).or_default();
+                // the first node of a kind gets what came before it
+                let first = !q.values().any(|(k, _)| *k == kind);
+                let mut v = VecDeque::new();
                 if first {
-                    v.extend(self.backlog.lock().unwrap().drain(..));
+                    if let Some(bl) = self.backlog.lock().unwrap().get_mut(kind) {
+                        v.extend(bl.drain(..));
+                    }
                 }
+                q.insert(key.to_string(), (kind, v));
             }
         }
-        let pending = |me: &Self| -> Vec<J> {
-            me.queues.lock().unwrap().get_mut(key).map(|q| q.drain(..).map(|b| block_json(&b)).collect()).unwrap_or_default()
-        };
+        let pending =
+            |me: &Self| -> Vec<J> { me.queues.lock().unwrap().get_mut(key).map(|(_, q)| q.drain(..).collect()).unwrap_or_default() };
         let out = pending(self);
         if !out.is_empty() {
             return Ok(AlarmPush::Alarms(out, false));
@@ -247,7 +308,7 @@ impl Device for PartnerDev {
             return Ok(AlarmPush::Down);
         }
         match self.with(|p| p.recv(wait)) {
-            Ok(Some(b)) => self.deliver(b),
+            Ok(Some(m)) => self.deliver(m),
             Ok(None) => {}
             Err(_) => return Ok(AlarmPush::Down),
         }

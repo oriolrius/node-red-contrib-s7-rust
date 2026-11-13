@@ -35,11 +35,13 @@
     certificate).</p>
   <p>Some CPUs accept only TLS sessions (for example PLCSIM Advanced V8, FW S4.1). If the
     connection fails with "the PLC refused the session without TLS", turn on TLS.</p>
-  <h4>S7 partner (BSEND/BRCV)</h4>
-  <p>Block transfer with the PLC instructions <code>BSEND</code> / <code>BRCV</code> over an S7
-    connection, for the nodes <code>s7 bsend</code> and <code>s7 brcv</code>. In TIA Portal: add an S7
+  <h4>S7 partner (BSEND/BRCV, USEND/URCV)</h4>
+  <p>Data transfer with the PLC instructions <code>BSEND</code> / <code>BRCV</code> (blocks,
+    acknowledged) and <code>USEND</code> / <code>URCV</code> (up to four areas, not acknowledged)
+    over an S7 connection, for the nodes <code>s7 bsend</code>, <code>s7 brcv</code>,
+    <code>s7 usend</code> and <code>s7 urcv</code>. In TIA Portal: add an S7
     connection to an unspecified partner, with the active connection establishment on the partner
-    side (not on the PLC), and use its ID in BSEND / BRCV. Node-RED connects to the PLC with the
+    side (not on the PLC), and use its ID in the instructions. Node-RED connects to the PLC with the
     TSAPs of that connection: local = the partner TSAP, remote = the PLC TSAP (S7-1500 numeric
     TSAPs: clear "SIMATIC-ACC" in the connection properties). The partner address of the connection
     must be the address the PLC sees for Node-RED. The connection is loaded with the hardware

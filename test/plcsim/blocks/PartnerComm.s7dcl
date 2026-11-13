@@ -7,6 +7,8 @@ FUNCTION_BLOCK "PartnerComm"
     VAR
         sender : BSEND;
         receiver : BRCV;
+        usender : USEND;
+        ureceiver : URCV;
     END_VAR
     VAR_TEMP
         i : Int;
@@ -43,6 +45,33 @@ FUNCTION_BLOCK "PartnerComm"
            IF #receiver.ERROR THEN
                "PartnerData".recvError := TRUE;
                "PartnerData".recvStatus := #receiver.STATUS;
+           END_IF;
+           // USEND R_ID 3 when a client sets usendReq: two areas, usendBuf (10 bytes:
+           // 16#CD, the count, then 2..9) and usendInt (the count * 3); URCV R_ID 4 into
+           // urcvBuf (100 bytes), always ready
+           "PartnerData".usendBuf[0] := 16#CD;
+           "PartnerData".usendBuf[1] := DINT_TO_BYTE("PartnerData".usendCount);
+           FOR #i := 2 TO 9 DO
+               "PartnerData".usendBuf[#i] := INT_TO_BYTE(#i);
+           END_FOR;
+           "PartnerData".usendInt := DINT_TO_INT("PartnerData".usendCount * 3);
+           #usender(REQ := "PartnerData".usendReq, ID := 16#100, R_ID := 3, SD_1 := "PartnerData".usendBuf, SD_2 := "PartnerData".usendInt);
+           IF #usender.DONE THEN
+               "PartnerData".usendReq := FALSE;
+               "PartnerData".usendCount := "PartnerData".usendCount + 1;
+           END_IF;
+           IF #usender.ERROR THEN
+               "PartnerData".usendReq := FALSE;
+               "PartnerData".usendError := TRUE;
+               "PartnerData".usendStatus := #usender.STATUS;
+           END_IF;
+           #ureceiver(EN_R := TRUE, ID := 16#100, R_ID := 4, RD_1 := "PartnerData".urcvBuf);
+           IF #ureceiver.NDR THEN
+               "PartnerData".urcvCount := "PartnerData".urcvCount + 1;
+           END_IF;
+           IF #ureceiver.ERROR THEN
+               "PartnerData".urcvError := TRUE;
+               "PartnerData".urcvStatus := #ureceiver.STATUS;
            END_IF;
     END_NETWORK
 END_FUNCTION_BLOCK

@@ -17,5 +17,15 @@ DATA_BLOCK PartnerData
         recvCount : DInt;
         recvError : Bool;
         recvStatus : Word;
+        usendReq : Bool;
+        usendBuf : Array[0..9] of Byte;
+        usendInt : Int;
+        usendCount : DInt;
+        usendError : Bool;
+        usendStatus : Word;
+        urcvBuf : Array[0..99] of Byte;
+        urcvCount : DInt;
+        urcvError : Bool;
+        urcvStatus : Word;
     END_VAR
 END_DATA_BLOCK

@@ -60,7 +60,9 @@
       "s7rs-info": "nodes/s7rs-info.js",
       "s7rs-alarms": "nodes/s7rs-alarms.js",
       "s7rs-bsend": "nodes/s7rs-bsend.js",
-      "s7rs-brcv": "nodes/s7rs-brcv.js"
+      "s7rs-brcv": "nodes/s7rs-brcv.js",
+      "s7rs-usend": "nodes/s7rs-usend.js",
+      "s7rs-urcv": "nodes/s7rs-urcv.js"
     }
   },
   "scripts": {

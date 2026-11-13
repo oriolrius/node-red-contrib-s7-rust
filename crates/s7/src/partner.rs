@@ -13,6 +13,15 @@
 //!
 //! A block is at most 65534 bytes; the PLC limits it further (S7-1500: 65534,
 //! S7-300: 32 KB).
+//!
+//! The same connection carries USEND / URCV (unacknowledged): a userdata
+//! frame whose parameters are the R_ID (`00 01 12 06 13 xx <R_ID>`) and whose
+//! data has one to four areas (`FF 02 <count u16>`, then per area
+//! `00 <transport size> <length> <bytes>`, odd lengths padded except the
+//! last). [`Partner::recv`] returns them as [`Message::Usend`];
+//! [`Partner::usend`] sends one. A USEND fits in one PDU; the PLC URCV takes it
+//! only when the areas match its RD_1..RD_4 (an S7-1500 needs the exact length
+//! of an `Array of Byte`), and it gives no answer either way.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -26,6 +35,32 @@ pub struct Block {
     pub r_id: u32,
     pub data: Vec<u8>,
 }
+
+/// One area (SD_i / RD_i) of a USEND.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Area {
+    /// S7 transport size: 0x03 bit, 0x04 byte/word/dword, 0x05 integer,
+    /// 0x07 real, 0x09 octet string.
+    pub tsize: u8,
+    pub data: Vec<u8>,
+}
+
+/// A USEND of the PLC.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Usend {
+    pub r_id: u32,
+    pub areas: Vec<Area>,
+}
+
+/// What the PLC sent: a BSEND block or a USEND.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Message {
+    Block(Block),
+    Usend(Usend),
+}
+
+/// Areas of a USEND (SD_1..SD_4).
+pub const MAX_AREAS: usize = 4;
 
 /// The largest block (the length is a 16-bit field).
 pub const MAX_BLOCK: usize = 65534;
@@ -48,13 +83,63 @@ pub struct Partner {
     conn: Conn,
     next: u8,
     rx: Option<Rx>,
-    done: VecDeque<Block>,
+    done: VecDeque<Message>,
     dropped: u64,
 }
 
 /// Received blocks kept until [`Partner::recv`] takes them; older ones are
 /// dropped (see [`Partner::dropped`]).
 pub const MAX_PENDING: usize = 256;
+
+/// Length in bytes of a USEND area: bits for the transport sizes bit, byte
+/// and integer, bytes for the others.
+fn area_bytes(tsize: u8, len: u16) -> usize {
+    match tsize {
+        0x03..=0x05 => (len as usize).div_ceil(8),
+        _ => len as usize,
+    }
+}
+
+/// A USEND indication (parameters `00 01 12 06 13 xx <R_ID>`); None for
+/// other frames. The data must hold exactly the announced areas.
+pub(crate) fn parse_usend(f: &[u8]) -> Result<Option<Usend>> {
+    if f.len() < 13 || f[0] != 0x02 || f[1] != 0xF0 || f[3] != 0x32 || f[4] != 0x07 {
+        return Ok(None);
+    }
+    let plen = u16::from_be_bytes([f[9], f[10]]) as usize;
+    let dlen = u16::from_be_bytes([f[11], f[12]]) as usize;
+    let Some(p) = f.get(13..13 + plen) else { return Ok(None) };
+    if p.len() != 10 || p[0..5] != [0x00, 0x01, 0x12, 0x06, 0x13] {
+        return Ok(None);
+    }
+    let r_id = u32::from_be_bytes([p[6], p[7], p[8], p[9]]);
+    let d = f.get(13 + plen..13 + plen + dlen).ok_or_else(|| io("short USEND data"))?;
+    if d.len() < 4 || d[0] != 0xFF {
+        return Err(io(format!("bad USEND data header ({} bytes)", d.len())));
+    }
+    let n = u16::from_be_bytes([d[2], d[3]]) as usize;
+    if n == 0 || n > MAX_AREAS {
+        return Err(io(format!("USEND with {n} areas (1..={MAX_AREAS})")));
+    }
+    let mut areas = Vec::with_capacity(n);
+    let mut o = 4;
+    for i in 0..n {
+        let h = d.get(o..o + 4).ok_or_else(|| io(format!("USEND area {} of {n}: truncated header", i + 1)))?;
+        let tsize = h[1];
+        let len = area_bytes(tsize, u16::from_be_bytes([h[2], h[3]]));
+        o += 4;
+        let data = d.get(o..o + len).ok_or_else(|| io(format!("USEND area {} of {n}: {len} bytes announced", i + 1)))?;
+        areas.push(Area { tsize, data: data.to_vec() });
+        o += len;
+        if len % 2 == 1 && i + 1 < n {
+            o += 1; // fill byte
+        }
+    }
+    if o != d.len() {
+        return Err(io(format!("USEND: {} bytes after the areas", d.len().saturating_sub(o))));
+    }
+    Ok(Some(Usend { r_id, areas }))
+}
 
 /// A parsed userdata BSEND/BRCV frame.
 struct Frame<'a> {
@@ -170,14 +255,18 @@ impl Partner {
             if rx.total != 0 && rx.total != rx.data.len() {
                 return Err(io(format!("BSEND block: {} bytes announced, {} received", rx.total, rx.data.len())));
             }
-            if self.done.len() >= MAX_PENDING {
-                // nobody calls recv(): keep the newest blocks
-                self.done.pop_front();
-                self.dropped += 1;
-            }
-            self.done.push_back(Block { r_id: rx.r_id, data: rx.data });
+            self.push(Message::Block(Block { r_id: rx.r_id, data: rx.data }));
         }
         Ok(())
+    }
+
+    fn push(&mut self, m: Message) {
+        if self.done.len() >= MAX_PENDING {
+            // nobody calls recv(): keep the newest messages
+            self.done.pop_front();
+            self.dropped += 1;
+        }
+        self.done.push_back(m);
     }
 
     /// Reads frames until one is a response (returned) or the wait ends; PLC
@@ -190,6 +279,13 @@ impl Partner {
                 return Ok(None);
             }
             let Some(f) = self.conn.recv_s7(left)? else { return Ok(None) };
+            if let Some(u) = parse_usend(&f)? {
+                self.push(Message::Usend(u));
+                if !want_response {
+                    return Ok(None);
+                }
+                continue;
+            }
             let Some(fr) = parse(&f)? else { continue };
             if fr.tg == TG_REQ {
                 let (r, seq, id_seq, eos, d) = (fr.pdu_ref, fr.seq, fr.id_seq, fr.eos, fr.data.to_vec());
@@ -203,9 +299,9 @@ impl Partner {
         }
     }
 
-    /// The next block of a PLC BSEND, waiting up to `wait`. None: no
-    /// complete block in that time.
-    pub fn recv(&mut self, wait: Duration) -> Result<Option<Block>> {
+    /// The next block of a PLC BSEND or USEND, waiting up to `wait`. None:
+    /// nothing complete in that time.
+    pub fn recv(&mut self, wait: Duration) -> Result<Option<Message>> {
         if let Some(b) = self.done.pop_front() {
             return Ok(Some(b));
         }
@@ -257,6 +353,45 @@ impl Partner {
             }
         }
         Ok(())
+    }
+
+    /// Sends a USEND with these areas (SD_1..SD_4) to the PLC URCV with this
+    /// R_ID. Unacknowledged: the PLC gives no answer, also when no URCV takes
+    /// it. The areas are sent with their transport size (0x04: bytes).
+    pub fn usend(&mut self, r_id: u32, areas: &[Area]) -> Result<()> {
+        if areas.is_empty() || areas.len() > MAX_AREAS {
+            return Err(local(format!("USEND with {} areas: 1..={MAX_AREAS}", areas.len())));
+        }
+        let mut d = vec![0xFF, 0x02];
+        d.extend_from_slice(&(areas.len() as u16).to_be_bytes());
+        for (i, a) in areas.iter().enumerate() {
+            if a.data.is_empty() {
+                return Err(local(format!("USEND area {} is empty", i + 1)));
+            }
+            let len = match a.tsize {
+                0x03..=0x05 => a.data.len().checked_mul(8),
+                _ => Some(a.data.len()),
+            }
+            .filter(|n| *n <= u16::MAX as usize)
+            .ok_or_else(|| local(format!("USEND area {} too long ({} bytes)", i + 1, a.data.len())))?;
+            d.extend_from_slice(&[0x00, a.tsize]);
+            d.extend_from_slice(&(len as u16).to_be_bytes());
+            d.extend_from_slice(&a.data);
+            if a.data.len() % 2 == 1 && i + 1 < areas.len() {
+                d.push(0x00);
+            }
+        }
+        let pdu = self.conn.max_pdu as usize;
+        if 10 + 10 + d.len() > pdu {
+            return Err(local(format!(
+                "USEND of {} bytes does not fit in the PDU ({pdu}): at most {} bytes of data",
+                d.len(),
+                pdu.saturating_sub(24 + 4 * areas.len())
+            )));
+        }
+        let mut p = vec![0x00, 0x01, 0x12, 0x06, 0x13, 0x00];
+        p.extend_from_slice(&r_id.to_be_bytes());
+        self.conn.send_s7(0x07, &p, &d)
     }
 
     fn conn_timeout(&self) -> Duration {

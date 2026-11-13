@@ -429,11 +429,13 @@ impl S7Native {
         Ok(())
     }
 
-    /// subscribeBlocks({conn, sub}): blocks of the PLC BSEND on an S7
-    /// partner endpoint, as data events with `alarms` = JSON text
-    /// {snapshot: false, alarms: [{rid, data (hex)}]}. Stop with unsubscribe(sub).
+    /// subscribeBlocks(conn, sub, kind?): what the PLC sends on an S7 partner
+    /// endpoint, as data events with `alarms` = JSON text {snapshot: false,
+    /// alarms: [...]}: kind "bsend" (default) the BSEND blocks
+    /// [{kind, rid, data (hex)}], kind "usend" the USENDs [{kind, rid, areas:
+    /// [{type, data (hex)}]}]. Stop with unsubscribe(sub).
     #[napi]
-    pub fn subscribe_blocks(&self, conn: String, sub: String) -> napi::Result<()> {
+    pub fn subscribe_blocks(&self, conn: String, sub: String, kind: Option<String>) -> napi::Result<()> {
         if sub.is_empty() {
             return Err(napi_err("subscribeBlocks: sub is required"));
         }
@@ -445,7 +447,7 @@ impl S7Native {
         let key = format!("{sub}#{generation}");
         std::thread::Builder::new()
             .name(format!("s7brcv-{sub}"))
-            .spawn(move || alarm_loop(s, c, key, serde_json::json!({}), tx, s2, data))
+            .spawn(move || alarm_loop(s, c, key, serde_json::json!({"kind": kind.unwrap_or_default()}), tx, s2, data))
             .map_err(napi_err)?;
         self.subs.lock().unwrap().insert(sub, SubHandle { conn, stop });
         Ok(())
@@ -827,6 +829,28 @@ mod fakes {
             f.received().into_iter().map(|b| std::iter::once(b.r_id).chain(b.data.into_iter().map(u32::from)).collect()).collect()
         })
         .unwrap_or_default()
+    }
+
+    /// The fake PLC program calls USEND with these areas: JSON
+    /// [[type, [bytes]], ...].
+    #[napi]
+    pub fn fake_partner_usend(addr: String, rid: u32, areas: String) -> bool {
+        let Ok(list) = serde_json::from_str::<Vec<(u8, Vec<u8>)>>(&areas) else { return false };
+        let areas = list.into_iter().map(|(tsize, data)| s7::partner::Area { tsize, data }).collect();
+        with_partner(&addr, |f| f.usend(rid, areas)).unwrap_or(false)
+    }
+
+    /// The USENDs the fake URCV got, as JSON [{rid, areas: [[type, [bytes]]]}].
+    #[napi]
+    pub fn fake_partner_usends(addr: String) -> String {
+        let v = with_partner(&addr, |f| {
+            f.usends()
+                .into_iter()
+                .map(|u| serde_json::json!({"rid": u.r_id, "areas": u.areas.into_iter().map(|a| (a.tsize, a.data)).collect::<Vec<_>>()}))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+        serde_json::Value::Array(v).to_string()
     }
 
     /// The fake BRCV refuses blocks with this R_ID (none: accept all).

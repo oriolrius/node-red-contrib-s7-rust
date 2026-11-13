@@ -1,0 +1,33 @@
+<script type="text/javascript">
+  RED.nodes.registerType('s7rs-urcv', {
+    category: 'network',
+    color: '#3FADB5',
+    defaults: {
+      name: { value: '' },
+      endpoint: { value: '', type: 's7rs-endpoint', required: true },
+      rid: { value: '', validate: function (v) { return v === '' || v === undefined || /^\d+$/.test(String(v)); } },
+    },
+    inputs: 0,
+    outputs: 1,
+    icon: 'font-awesome/fa-download',
+    paletteLabel: 's7 urcv',
+    label: function () {
+      return this.name || ('s7 urcv' + (this.rid !== '' && this.rid !== undefined ? ' R_ID ' + this.rid : ''));
+    },
+  });
+</script>
+
+<script type="text/html" data-template-name="s7rs-urcv">
+  <div class="form-row">
+    <label for="node-input-name"><i class="fa fa-tag"></i> <span data-i18n="s7rs-urcv.label.name"></span></label>
+    <input type="text" id="node-input-name" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-endpoint"><i class="fa fa-plug"></i> <span data-i18n="s7rs-urcv.label.endpoint"></span></label>
+    <input type="text" id="node-input-endpoint" />
+  </div>
+  <div class="form-row">
+    <label for="node-input-rid">R_ID</label>
+    <input type="text" id="node-input-rid" data-i18n="[placeholder]s7rs-urcv.placeholder.rid" style="width: 150px" />
+  </div>
+</script>
