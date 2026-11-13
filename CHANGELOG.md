@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `s7 alarms`: acknowledges alarms. An input message with `msg.ack` (an alarm id `"0x…"`, a list of
+  ids, or `"all"` / `true`: every alarm that waits for acknowledgement) acknowledges the coming
+  state, as the TIA Portal alarm display does. The node sends `state: "acknowledged"` or
+  `"ackFailed"` (`payload.ackResult`: the PLC refuses an alarm whose class needs no
+  acknowledgement) per alarm. Alarm messages have `payload.acknowledged`. An alarm that went
+  before its acknowledgement stays in the node list until it is acknowledged (the PLC keeps it
+  too); the status shows the active alarms and how many wait for acknowledgement.
+- `s7 info`: action `acknowledge {ids, all}` (writes; the admin API refuses it).
+- Rust crate `s7plus`: `Client::acknowledge_alarms` (CreateObject of an AckJob, class 3636, under
+  the alarm subsystem; at most 100 alarms per job, like TIA Portal), `decode_ack_job`,
+  `AckResult`; arrays of structs (dynamic array, flags 0x20) are encoded and decoded with the
+  struct id once after the datatype, then the count and the members of each element. The fake
+  PLC has alarms with acknowledgement (`raise_alarm_ack`) and answers AckJobs.
+- `test/plcsim`: `set-alarm-class.ps1` and `alarm-classes.xlsx` give `alReq` the alarm class
+  "Acknowledgement"; `live_alarms.js` acknowledges it. Tested on PLCSIM Advanced V8 (S7-1500,
+  FW S4.1): acknowledged in about 15 ms; an alarm of a class without acknowledgement gives
+  `ackFailed` (0x8005).
+
 ## [1.2.2] - 2026-11-12
 
 ### Fixed

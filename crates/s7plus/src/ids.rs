@@ -83,6 +83,20 @@ pub const ATTR_AS_CGS_ALL_STATES_INFO: u32 = 3474;
 pub const ATTR_AS_CGS_TIMESTAMP: u32 = 3475;
 pub const ATTR_AS_CGS_ASSOC_VALUES: u32 = 3476;
 pub const ATTR_AS_CGS_ACK_TIMESTAMP: u32 = 3646;
+// Alarm acknowledgement: an AckJob (class 3636, base AlarmingJob 3640)
+// created under the alarm subsystem (8); its AcknowledgementList holds
+// AS_AlarmAcknfyElem structs (7604). Names from the OMS+ object model.
+pub const CLASS_ACK_JOB: u32 = 3636;
+pub const ATTR_ALARMING_JOB_APPLICATION: u32 = 3637;
+pub const ATTR_ALARMING_JOB_HOST: u32 = 3638;
+pub const ATTR_ALARMING_JOB_USER: u32 = 3639;
+pub const ATTR_ALARMING_JOB_STATE: u32 = 3641;
+pub const ATTR_ALARMING_JOB_TIMESTAMP: u32 = 3642;
+pub const ATTR_ACK_JOB_LIST: u32 = 3647;
+pub const STRUCT_ALARM_ACKNFY_ELEM: u32 = 7604;
+pub const ATTR_ACKNFY_ALL_STATES_INFO: u32 = 7596;
+pub const ATTR_ACKNFY_ACK_RESULT: u32 = 7597;
+pub const ATTR_ACKNFY_CPU_ALARM_ID: u32 = 7598;
 pub const ATTR_DAI_MESSAGE_TYPE: u32 = 4079;
 pub const ATTR_AS_OBJECT_ES_COMMENT: u32 = 4288;
 /// S7-1200 FW V3: block comment, sparse WString per language.
@@ -218,6 +232,17 @@ fn id_name_str(id: u32) -> Option<&'static str> {
         3474 => "AS_CGS.AllStatesInfo",
         3475 => "AS_CGS.Timestamp",
         3476 => "AS_CGS.AssociatedValues",
+        3636 => "AckJob_Class",
+        3637 => "AlarmingJob.Application",
+        3638 => "AlarmingJob.Host",
+        3639 => "AlarmingJob.User",
+        3641 => "AlarmingJob.AlarmJobState",
+        3642 => "AlarmingJob.JobTimestamp",
+        3647 => "AckJob.AcknowledgementList",
+        7596 => "AS_AlarmAcknfyElem.AllStatesInfo",
+        7597 => "AS_AlarmAcknfyElem.AckResult",
+        7598 => "AS_AlarmAcknfyElem.CPUAlarmID",
+        7604 => "AS_AlarmAcknfyElem",
         3646 => "AS_CGS.AckTimestamp",
         3735 => "ControllerArea.ValueInitial",
         3736 => "ControllerArea.ValueActual",

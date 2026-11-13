@@ -374,3 +374,79 @@ test('S7CommPlus: the certificate action shows a refused certificate', async () 
   assert.ok(c.error.includes(c.fingerprint) && /does not match/.test(c.error), 'error names the fingerprint');
   assert.equal(ep.state.state, 'faulted');
 });
+
+test('S7CommPlus: s7 alarms acknowledges alarms (msg.ack)', async () => {
+  const addr = fakes.startFakeS7Plus(false, true);
+  const [host, port] = addr.split(':');
+  await load({ protocol: 's7plus', host, port }, [{ id: 'al', type: 's7rs-alarms' }]);
+  const got = collect('al');
+  await until(() => got.some((m) => m.initial));
+  const al = helper.getNode('al');
+  let last = '';
+  const orig = al.status.bind(al);
+  al.status = (s) => {
+    if (s && / (active|to acknowledge)$/.test(s.text)) last = s.text;
+    return orig(s);
+  };
+  const status = () => last;
+  const need = '0x8a0e000500010000';
+  const noNeed = '0x8a0e000500020000';
+  fakes.fakeS7PlusRaiseAlarm(addr, need, true, [], true);
+  fakes.fakeS7PlusRaiseAlarm(addr, noNeed, true, [], false);
+  await until(() => got.some((m) => m.topic === need) && got.some((m) => m.topic === noNeed));
+  assert.equal(got.find((m) => m.topic === need).payload.acknowledged, false);
+  assert.equal(got.find((m) => m.topic === noNeed).payload.acknowledged, true);
+  // the initial alarm of the fake also waits (AllStatesInfo 1)
+  await until(() => status() === '3 active, 2 to acknowledge');
+
+  // one id: acknowledged; an alarm class without acknowledgement: refused by the PLC
+  al.receive({ ack: [need, noNeed] });
+  await until(() => got.some((m) => m.topic === need && m.state === 'acknowledged'));
+  await until(() => got.some((m) => m.topic === noNeed && m.state === 'ackFailed'));
+  assert.equal(got.find((m) => m.state === 'ackFailed').payload.ackResult, -32763);
+  await until(() => status() === '3 active, 1 to acknowledge');
+
+  // "all": only the alarms that wait for acknowledgement (the initial one and id2)
+  const id2 = '0x8a0e000500030000';
+  fakes.fakeS7PlusRaiseAlarm(addr, id2, true, [], true);
+  await until(() => got.some((m) => m.topic === id2));
+  const n = got.length;
+  al.receive({ ack: 'all' });
+  await until(() => got.slice(n).filter((m) => m.state === 'acknowledged').length === 2);
+  assert.deepEqual(got.slice(n).map((m) => m.topic).sort(), ['0x8a0e000100010000', id2]);
+  await until(() => status() === '4 active');
+
+  // bad input
+  const errs = [];
+  al.on('call:error', (c) => errs.push(String(c.args[0])));
+  al.receive({ payload: 1 });
+  al.receive({ ack: 'nope' });
+  await until(() => errs.length === 2);
+  assert.match(errs[0], /no msg\.ack/);
+  assert.match(errs[1], /alarm id "nope"/);
+});
+
+test('S7CommPlus: s7 alarms keeps an alarm that went without acknowledgement', async () => {
+  const addr = fakes.startFakeS7Plus(false, true);
+  const [host, port] = addr.split(':');
+  await load({ protocol: 's7plus', host, port }, [{ id: 'al', type: 's7rs-alarms' }]);
+  const got = collect('al');
+  await until(() => got.some((m) => m.initial));
+  const al = helper.getNode('al');
+  let last = '';
+  const orig = al.status.bind(al);
+  al.status = (s) => {
+    if (s && / (active|to acknowledge)$/.test(s.text)) last = s.text;
+    return orig(s);
+  };
+  const id = '0x8a0e000500010000';
+  fakes.fakeS7PlusRaiseAlarm(addr, id, true, [], true);
+  fakes.fakeS7PlusRaiseAlarm(addr, id, false, [], true);
+  await until(() => got.some((m) => m.topic === id && m.state === 'going'));
+  assert.equal(got.find((m) => m.topic === id && m.state === 'going').payload.acknowledged, false);
+  // 1 coming (the initial alarm of the fake), 2 wait (the initial one and id)
+  await until(() => last === '1 active, 2 to acknowledge');
+  al.receive({ ack: 'all' });
+  await until(() => got.some((m) => m.topic === id && m.state === 'acknowledged'));
+  await until(() => last === '1 active');
+});
