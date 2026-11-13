@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-13
+
 ### Added
 
 - `s7 alarms`: acknowledges alarms. An input message with `msg.ack` (an alarm id `"0x…"`, a list of
@@ -40,6 +42,7 @@ All notable changes to this project are documented here. The format follows
   with the hardware configuration; the TIA Portal MCP loads the software only) and
   `live_partner.js`. Tested on PLCSIM Advanced V8 (S7-1500, FW S4.1): 16 and 1800 bytes both
   ways.
+- Example flow "06 - BSEND and BRCV".
 - `s7 info` (S7CommPlus), read only, also in the admin API:
   - `resolve {name}`: the object id (RID) of a DB, FB, FC, OB or technology object by its name,
     asked to the PLC (GetVariablesAddress 0x0590 with the object path
@@ -233,7 +236,8 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.1.0...v1.2.0
