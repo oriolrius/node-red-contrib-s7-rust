@@ -215,10 +215,14 @@ impl Device for PartnerDev {
             "status" => {
                 let (st, det) = self.state.lock().unwrap().clone();
                 let (n, dropped, un, udropped) = *self.blocks.lock().unwrap();
+                let q = self.queues.lock().unwrap();
+                let count = |kind: &str| q.values().filter(|(k, _)| *k == kind).count();
+                let receivers = json!({"bsend": count("bsend"), "usend": count("usend")});
+                drop(q);
                 json!({
                     "conn": self.id, "protocol": "s7partner", "addr": self.opts.addr, "state": st, "detail": det,
                     "reconnects": *self.reconnects.lock().unwrap(), "blocksReceived": n, "blocksDropped": dropped,
-                    "usendsReceived": un, "usendsDropped": udropped,
+                    "usendsReceived": un, "usendsDropped": udropped, "receivers": receivers,
                 })
             }
             "bsend" => {

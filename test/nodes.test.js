@@ -82,6 +82,16 @@ function ask(id, msg) {
 }
 
 const collect = (id) => load.got[id];
+// Waits until the S7 partner endpoint "ep" has this many s7 brcv and s7 urcv subscriptions.
+async function receivers(bsend, usend) {
+  const ep = helper.getNode('ep');
+  for (let i = 0; i < 500; i++) {
+    const r = (await ep.bridge.status(ep.id)).receivers || {};
+    if (r.bsend === bsend && r.usend === usend) return;
+    await new Promise((res) => setTimeout(res, 10));
+  }
+  throw new Error('receivers: timeout');
+}
 
 test.before(() => new Promise((r) => helper.startServer(r)));
 test.after(() => new Promise((r) => helper.stopServer(r)));
@@ -461,6 +471,7 @@ test('S7 partner: s7 brcv and s7 bsend (BSEND/BRCV)', async () => {
   ]);
   const all = collect('rx');
   const one = collect('rx1');
+  await receivers(2, 0);
   // PLC BSEND -> both receivers (the second only R_ID 1); 1500 bytes are fragmented
   const big = Array.from({ length: 1500 }, (_, i) => i % 251);
   await until(() => fakes.fakePartnerBsend(addr, 3, [9, 9]));
@@ -510,11 +521,10 @@ test('S7 partner: s7 urcv and s7 usend (USEND/URCV)', async () => {
   const all = collect('u');
   const three = collect('u3');
   const blocks = collect('b');
-  // PLC USEND -> both receivers (the second only R_ID 3); the brcv node gets only the BSEND.
-  // The first USEND (before the nodes subscribe) goes to the first urcv node.
+  await receivers(1, 2);
+  // PLC USEND -> both receivers (the second only R_ID 3); the brcv node gets only the BSEND
   await until(() => fakes.fakePartnerUsend(addr, 5, JSON.stringify([[4, [1, 2, 3]]])));
   await until(() => all.length === 1);
-  await new Promise((r) => setTimeout(r, 300));
   assert.ok(fakes.fakePartnerUsend(addr, 3, JSON.stringify([[4, [0xcd, 0, 2, 3, 4, 5, 6, 7, 8, 9]], [5, [0, 3]]])));
   assert.ok(fakes.fakePartnerBsend(addr, 1, [9]));
   await until(() => all.length === 2 && three.length === 1 && blocks.length === 1);

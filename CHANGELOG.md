@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format follows
   Buffer, byte array or string, or an array of up to four) to a PLC `URCV`. USEND is not
   acknowledged and must fit in one PDU. An S7-1500 URCV takes the data only when each area has
   the exact length of its RD_i.
+- Status of an S7 partner endpoint (`s7 info` action `status`, admin API): `usendsReceived`,
+  `usendsDropped` and `receivers` (the number of `s7 brcv` and `s7 urcv` subscriptions).
 - Rust crate `s7`: `partner::Partner::usend`, `Partner::recv` returns `Message::Block` or
   `Message::Usend` (before: `Block`), `Area`, `Usend`; the fake partner PLC sends and receives
   USENDs. The frame layout was taken from PLCSIM Advanced V8 (S7-1500, FW S4.1): parameters
