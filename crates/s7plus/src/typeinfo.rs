@@ -108,17 +108,17 @@ pub(crate) fn decode_offset_info(r: &mut Reader, kind: u8) -> OffsetInfo {
     o.opt_addr = r.le_u32();
     o.non_opt_addr = r.le_u32();
     let mdim = |r: &mut Reader, o: &mut OffsetInfo| {
-        for i in 0..6 {
-            o.m_lower[i] = r.le_u32() as i32;
+        for x in o.m_lower.iter_mut() {
+            *x = r.le_u32() as i32;
         }
-        for i in 0..6 {
-            o.m_count[i] = r.le_u32();
+        for x in o.m_count.iter_mut() {
+            *x = r.le_u32();
         }
     };
     let rel = |r: &mut Reader, o: &mut OffsetInfo| {
         o.relation_id = r.le_u32();
-        for i in 0..4 {
-            o.info4[i] = r.le_u32();
+        for x in o.info4.iter_mut() {
+            *x = r.le_u32();
         }
     };
     match kind {
