@@ -62,6 +62,10 @@ pub trait Device: Send + Sync {
     /// Diagnostics: "status" and the protocol's actions.
     fn call(&self, action: &str, args: &J) -> Result<J, String>;
     fn shutdown(&self);
+    /// Called from the JS thread when the connection closes, before the
+    /// connection thread gets the stop message: stops the connection
+    /// attempts at once (also between the attempts of a running call).
+    fn cancel(&self) {}
     /// PLC subscription `sub` on `tags` with a cycle time: waits up to `wait`
     /// for the next notification. The first call creates the subscription
     /// (again after a reconnect); its first result holds every value. Err =
@@ -162,6 +166,13 @@ impl S7Dev {
 
     fn run<T>(&self, f: impl FnMut(&mut s7::Conn) -> s7::Result<T>) -> Result<T, String> {
         let r = self.ep.client.run(f);
+        self.ep.publish_state();
+        r.map_err(|e| e.to_string())
+    }
+
+    /// `run` for a request that changes the PLC: not repeated after it was sent.
+    fn run_once<T>(&self, f: impl FnMut(&mut s7::Conn) -> s7::Result<T>) -> Result<T, String> {
+        let r = self.ep.client.run_once(f);
         self.ep.publish_state();
         r.map_err(|e| e.to_string())
     }
@@ -269,12 +280,21 @@ impl Device for S7Dev {
                     Some(s) => chrono::DateTime::parse_from_rfc3339(s).map_err(|e| format!("time: {e}"))?,
                     None => Zone::Utc.now(),
                 };
-                self.run(|cn| cn.set_clock(&t, Zone::Local))?;
+                self.run_once(|cn| cn.set_clock(&t, Zone::Local))?;
                 json!({"time": t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)})
             }
             "syncClock" => {
                 let th = chrono::TimeDelta::milliseconds(arg_u64(a, "thresholdMs").unwrap_or(0) as i64);
-                let (off, synced) = self.run(|cn| cn.sync_clock(&Zone::Utc.now(), th, Zone::Local))?;
+                // the read is retried; only the set is not repeated after it was sent
+                let (plc, now) = self.run(|cn| {
+                    let now = Zone::Utc.now();
+                    Ok((cn.read_clock(Zone::Local)?, now))
+                })?;
+                let off = plc.signed_duration_since(now);
+                let synced = !(th > chrono::TimeDelta::zero() && off < th && off > -th);
+                if synced {
+                    self.run_once(|cn| cn.set_clock(&Zone::Utc.now(), Zone::Local))?;
+                }
                 json!({"offsetMs": off.num_milliseconds(), "synced": synced})
             }
             "blocks" => {
@@ -303,6 +323,10 @@ impl Device for S7Dev {
             }
             x => return Err(format!("unknown action {x:?} for s7 (status, identify, cpuState, szl, szlList, clock, setClock, syncClock, blocks, listBlocks, blockInfo)")),
         })
+    }
+
+    fn cancel(&self) {
+        self.ep.client.cancel();
     }
 
     fn shutdown(&self) {

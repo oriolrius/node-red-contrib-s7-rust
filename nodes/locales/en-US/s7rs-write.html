@@ -16,6 +16,9 @@
   <h3>Details</h3>
   <p>The message goes out only when all writes are good. Otherwise the node raises an error:
     use a Catch node.</p>
+  <p>A write is not sent again when its answer does not come (timeout, lost connection): the PLC
+    can have done it. The error then starts with <code>not confirmed</code>: read the tag to see
+    the value in the PLC.</p>
   <p>S7CommPlus: a single bit (for example <code>M20.1</code>) cannot be written through absolute
     access. Use a symbol for it.</p>
 </script>

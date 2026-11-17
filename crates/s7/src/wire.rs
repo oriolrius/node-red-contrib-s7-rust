@@ -346,6 +346,8 @@ pub struct Conn {
     trace: Option<TraceFn>,
     on_req: Option<OnRequestFn>,
     pdu_ref: u16,
+    /// S7 requests written whole to the socket (see `requests_sent`).
+    sent: u64,
     timeout: Duration,
     buf: Vec<u8>,
     /// Negotiated at Setup Communication.
@@ -417,6 +419,7 @@ impl Conn {
             trace: o.trace.clone(),
             on_req: o.on_request.clone(),
             pdu_ref: 0,
+            sent: 0,
             timeout: o.timeout,
             buf: Vec::with_capacity(1024),
             max_pdu: 0,
@@ -555,12 +558,29 @@ impl Conn {
             t("tx", &msg);
         }
         self.write_all(&msg, deadline)?;
+        self.sent += 1;
         let body = self.read_tpkt(deadline)?;
         if let Some(t) = &self.trace {
             t("rx", &self.buf[body.clone()]);
         }
         // the TPKT body starts at offset 0 of self.buf
-        parse_reply(&self.buf[body])
+        let b = &self.buf[body];
+        // An answer carries the reference of its request: another reference
+        // is not the answer to this request (transport error: reconnect).
+        if b.len() >= 9 && b[1] == 0xF0 && b[3] == 0x32 {
+            let got = u16::from_be_bytes([b[7], b[8]]);
+            if got != self.pdu_ref {
+                return Err(io(format!("reply PDU reference {got} does not match request {}", self.pdu_ref)));
+            }
+        }
+        parse_reply(b)
+    }
+
+    /// How many S7 requests this connection wrote whole to the socket. When
+    /// it changed during a failed operation, the PLC can have received (and
+    /// done) a request whose answer did not come.
+    pub fn requests_sent(&self) -> u64 {
+        self.sent
     }
 
     /// round_trip with the reply copied out.

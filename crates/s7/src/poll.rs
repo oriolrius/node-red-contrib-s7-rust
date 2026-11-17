@@ -669,7 +669,7 @@ impl Poller {
     }
 
     fn do_write(&self, c: &Client, tag: &Tag, val: &[u8]) -> Result<()> {
-        let r = c.run(|cn| {
+        let r = c.run_once(|cn| {
             let errs = cn.write(&[tag.item], &[val])?;
             if let Some(e) = errs.into_iter().next().flatten() {
                 return Err(e);

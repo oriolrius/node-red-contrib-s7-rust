@@ -3,7 +3,7 @@
 //! reconnects and retries. It tracks state and request statistics.
 
 use std::fmt;
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -53,6 +53,8 @@ pub struct Client {
     log: Log,
     stats: Arc<Stats>,
     max_pdu: AtomicU16,
+    /// Set by `cancel`: no new connection attempts.
+    cancelled: AtomicBool,
     inner: Mutex<Inner>,
 }
 
@@ -72,6 +74,7 @@ impl Client {
             log: Log::discard(),
             stats: Arc::new(Stats::new()),
             max_pdu: AtomicU16::new(0),
+            cancelled: AtomicBool::new(false),
             inner: Mutex::new(Inner { conn: None, state: State::Disconnected, detail: String::new(), reconnects: 0 }),
         }
     }
@@ -197,24 +200,54 @@ impl Client {
     /// Runs `f` with a live connection, reconnecting on transport errors.
     /// Calls are serialised: one S7 connection has one request in
     /// flight. A PLC answer (item/protocol/userdata error) is never retried.
-    pub fn run<T>(&self, mut f: impl FnMut(&mut Conn) -> Result<T>) -> Result<T> {
+    /// Use `run_once` for requests that change the PLC (writes).
+    pub fn run<T>(&self, f: impl FnMut(&mut Conn) -> Result<T>) -> Result<T> {
+        self.run_mode(f, true)
+    }
+
+    /// As `run`, but `f` is not repeated when it fails after a request
+    /// reached the socket: the PLC can have done it and only the answer was
+    /// lost. Writes use it: a repeated write can overwrite a value the PLC
+    /// changed in the meantime. The error then says that the result is not
+    /// known. A failure before the request reached the socket (a dead
+    /// connection, a failed reconnect) is still retried.
+    pub fn run_once<T>(&self, f: impl FnMut(&mut Conn) -> Result<T>) -> Result<T> {
+        self.run_mode(f, false)
+    }
+
+    fn run_mode<T>(&self, mut f: impl FnMut(&mut Conn) -> Result<T>, replay: bool) -> Result<T> {
         let mut inner = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         let n = self.attempts();
         let mut last = Error::Io("no attempt".into());
         for i in 0..n {
+            if self.is_cancelled() {
+                return Err(Error::Io("connection closed".into()));
+            }
             match self.ensure(&mut inner) {
-                Ok(cn) => match f(cn) {
-                    Ok(v) => return Ok(v),
-                    Err(e) if !e.retryable() => return Err(e),
-                    Err(e) => {
-                        self.log.warn(
-                            "request failed, reconnecting",
-                            &[("device", self.opts.addr.clone()), ("attempt", (i + 1).to_string()), ("err", e.to_string())],
-                        );
-                        inner.reconnects += 1;
-                        last = e;
+                Ok(cn) => {
+                    let before = cn.requests_sent();
+                    match f(cn) {
+                        Ok(v) => return Ok(v),
+                        Err(e) if !e.retryable() => return Err(e),
+                        Err(e) if !replay && cn.requests_sent() != before => {
+                            self.log.warn(
+                                "request failed after it was sent, not repeated",
+                                &[("device", self.opts.addr.clone()), ("err", e.to_string())],
+                            );
+                            inner.reconnects += 1;
+                            self.drop_locked(&mut inner, Some(&e));
+                            return Err(e.context("not confirmed (the PLC can have done it; not sent again)"));
+                        }
+                        Err(e) => {
+                            self.log.warn(
+                                "request failed, reconnecting",
+                                &[("device", self.opts.addr.clone()), ("attempt", (i + 1).to_string()), ("err", e.to_string())],
+                            );
+                            inner.reconnects += 1;
+                            last = e;
+                        }
                     }
-                },
+                }
                 Err(e) => last = e,
             }
             self.drop_locked(&mut inner, Some(&last));
@@ -223,6 +256,17 @@ impl Client {
             }
         }
         Err(last)
+    }
+
+    /// Stops all connection attempts for good (the owner closes the
+    /// device): `run` then fails at once, also between the attempts of a
+    /// call that is running. Thread-safe; does not wait for the lock.
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
     }
 
     /// Drops the connection (the next request reconnects).

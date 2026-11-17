@@ -139,6 +139,8 @@ pub struct TagError {
 
 struct ConnHandle {
     tx: Sender<Msg>,
+    /// To stop its connection attempts at once on close.
+    dev: Arc<dyn Device>,
 }
 
 struct SubHandle {
@@ -281,8 +283,9 @@ impl S7Native {
         let (tx, rx) = mpsc::channel();
         let status = self.on_status.clone();
         let id2 = id.clone();
-        std::thread::Builder::new().name(format!("s7-{id}")).spawn(move || worker(id2, dev, rx, status, every)).map_err(napi_err)?;
-        self.conns.lock().unwrap().insert(id, ConnHandle { tx });
+        let dev2 = dev.clone();
+        std::thread::Builder::new().name(format!("s7-{id}")).spawn(move || worker(id2, dev2, rx, status, every)).map_err(napi_err)?;
+        self.conns.lock().unwrap().insert(id, ConnHandle { tx, dev });
         Ok(res)
     }
 
@@ -293,6 +296,9 @@ impl S7Native {
             self.unsubscribe(s);
         }
         if let Some(h) = self.conns.lock().unwrap().remove(&conn) {
+            // a reconnect in progress on the connection thread stops now, not
+            // after its last attempt
+            h.dev.cancel();
             let _ = h.tx.send(Msg::Stop);
         }
     }

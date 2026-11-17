@@ -357,7 +357,7 @@ impl Endpoint {
             }
         }
         if !wi.is_empty() {
-            let r = self.client.run(|cn| cn.write(&wi, &wd));
+            let r = self.client.run_once(|cn| cn.write(&wi, &wd));
             self.publish_state();
             for (k, e) in r?.into_iter().enumerate() {
                 if let Some(e) = e {

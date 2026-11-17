@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A write is not sent again when its answer does not come. Before, the client reconnected and
+  sent the write again after a timeout, also when the PLC had already done it, and the node
+  reported success. A second write can overwrite a value that the PLC changed in the meantime
+  (for example a command bit that the PLC reset). Now the write fails with an error that starts
+  with `not confirmed`. A failure before the request reaches the socket (a dead connection) is
+  still retried. This applies to `s7 write`, the `setClock` action and the clock set of
+  `syncClock` (`s7 info`, S7; the clock read of `syncClock` is still retried), to writes and
+  alarm acknowledgement (S7CommPlus), and to `Poller::write` of the crate.
+- An answer with another PDU reference than its request is refused (transport error: the
+  client reconnects). Before, it was taken as the answer.
+- When a flow is removed or redeployed, a connection attempt in progress stops at once. Before,
+  the connection thread made its remaining attempts (for example two COTP connects) after the
+  endpoint was closed.
+- Rust crate `s7`: `Client::run_once` (no repeat after the request was sent), `Client::cancel`,
+  `Conn::requests_sent`; the fake CPU can lose the answer of a write
+  (`set_silent_writes_n`) and answer with a wrong PDU reference (`set_bad_ref_n`).
+
+Found by the independent tests of
+[Missel2/s7-compatibility-lab](https://github.com/Missel2/s7-compatibility-lab) (wrong PDU
+reference, lost write acknowledgement, reconnect after flow removal); their tests pass with
+this change.
+
 ## [1.4.0] - 2026-11-13
 
 ### Added
