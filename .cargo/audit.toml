@@ -1,0 +1,7 @@
+# cargo audit configuration (the CI runs `cargo audit --deny warnings`).
+[advisories]
+ignore = [
+  # chrono is unmaintained (informational, no vulnerability, no patched version).
+  # Move to jiff or time: https://github.com/oriolrius/node-red-contrib-s7-rust/issues/37
+  "RUSTSEC-2026-0543",
+]
