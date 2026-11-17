@@ -7,7 +7,7 @@
 //!   prefix) → resolved once per session to LIDs and read with their PLC type.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -53,6 +53,8 @@ pub struct PlusDev {
     log: Option<LogFn>,
     last_try: Mutex<Option<Instant>>,
     reconnects: AtomicU64,
+    /// Set by `cancel` (the connection closes): no new sessions.
+    cancelled: AtomicBool,
     stats: Stats,
     /// PLC subscriptions of the `s7 watch` nodes in push mode, by node id.
     push: Mutex<HashMap<String, PushSub>>,
@@ -191,6 +193,7 @@ impl PlusDev {
             log,
             last_try: Mutex::new(None),
             reconnects: AtomicU64::new(0),
+            cancelled: AtomicBool::new(false),
             stats: Stats::new(),
             push: Mutex::new(HashMap::new()),
             alarm_subs: Mutex::new(HashMap::new()),
@@ -265,9 +268,30 @@ impl PlusDev {
     }
 
     /// Runs f with a session; reconnects and retries on transport errors.
-    fn run<T>(&self, mut f: impl FnMut(&Client) -> Result<T, PErr>) -> Result<T, PErr> {
+    fn run<T>(&self, f: impl FnMut(&Client) -> Result<T, PErr>) -> Result<T, PErr> {
+        self.run_mode(f, true)
+    }
+
+    /// `run` for a request that changes the PLC (write, acknowledge): when f
+    /// fails with a transport error it is not repeated, because the PLC can
+    /// have done it and only the answer was lost. Errors of the connect are
+    /// still retried.
+    fn run_once<T>(&self, f: impl FnMut(&Client) -> Result<T, PErr>) -> Result<T, String> {
+        self.run_mode(f, false).map_err(|e| {
+            if transport(&e) {
+                format!("not confirmed (the PLC can have done it; not sent again): {e}")
+            } else {
+                e.to_string()
+            }
+        })
+    }
+
+    fn run_mode<T>(&self, mut f: impl FnMut(&Client) -> Result<T, PErr>, replay: bool) -> Result<T, PErr> {
         let mut last = PErr::Timeout;
         for i in 0..self.cfg.attempts.max(1) {
+            if self.cancelled.load(Ordering::SeqCst) {
+                return Err(PErr::Io(std::io::Error::other("connection closed")));
+            }
             let c = match self.client() {
                 Ok(c) => c,
                 Err(e) => {
@@ -286,6 +310,9 @@ impl PlusDev {
                 Err(e) if !transport(&e) => return Err(e),
                 Err(e) => {
                     self.drop_client(&e);
+                    if !replay {
+                        return Err(e);
+                    }
                     last = e;
                 }
             }
@@ -540,7 +567,7 @@ impl Device for PlusDev {
             }
         }
         if !abs.is_empty() {
-            let errs = self.run(|c| c.write_items(&abs, &abs_d)).map_err(|e| e.to_string())?;
+            let errs = self.run_once(|c| c.write_items(&abs, &abs_d))?;
             for (k, e) in errs.into_iter().enumerate() {
                 if let Some(e) = e {
                     out[abs_i[k]] = Some(format!("{}: {e}", items[abs_i[k]].0));
@@ -549,7 +576,7 @@ impl Device for PlusDev {
         }
         if !sym.is_empty() {
             let texts: Vec<&str> = sym_t.iter().map(|s| s.as_str()).collect();
-            let errs = self.run(|c| c.write_tags(&sym, &texts)).map_err(|e| e.to_string())?;
+            let errs = self.run_once(|c| c.write_tags(&sym, &texts))?;
             for (k, e) in errs.into_iter().enumerate() {
                 if let Some(e) = e {
                     out[sym_i[k]] = Some(format!("{}: {e}", items[sym_i[k]].0));
@@ -564,7 +591,7 @@ impl Device for PlusDev {
     }
 
     fn tick(&self, every: Duration, now: bool) {
-        if self.client.lock().unwrap().is_some() {
+        if self.cancelled.load(Ordering::SeqCst) || self.client.lock().unwrap().is_some() {
             return;
         }
         let mut last = self.last_try.lock().unwrap();
@@ -612,7 +639,7 @@ impl Device for PlusDev {
                 ids.sort_unstable();
                 ids.dedup();
                 if !ids.is_empty() {
-                    self.run(|c| c.acknowledge_alarms(&ids)).map_err(e)?;
+                    self.run_once(|c| c.acknowledge_alarms(&ids))?;
                 }
                 json!({"sent": ids.iter().map(|i| format!("0x{i:016x}")).collect::<Vec<_>>()})
             }
@@ -870,6 +897,10 @@ impl Device for PlusDev {
                 let _ = p.sub.close(&p.client);
             }
         }
+    }
+
+    fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
     }
 
     fn shutdown(&self) {

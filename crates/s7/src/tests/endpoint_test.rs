@@ -140,3 +140,66 @@ fn trace_log_has_frames() {
     assert!(l.iter().any(|s| s.starts_with("INFO connection state") && s.contains("state=connected")), "{l:?}");
     assert!(l.iter().any(|s| s.starts_with("DEBUG request")), "{l:?}");
 }
+
+/// A write whose answer is lost is not sent again: the PLC did it, and a
+/// second write could overwrite a value the PLC changed in the meantime.
+#[test]
+fn lost_write_ack_is_not_repeated() {
+    let f = FakeCpu::new(480);
+    let addr = f.start();
+    let (host, port) = addr.rsplit_once(':').unwrap();
+    let cfg = EndpointConfig {
+        host: host.into(),
+        port: port.parse().unwrap(),
+        cpu: "1500".into(),
+        timeout: Duration::from_millis(500),
+        ..Default::default()
+    };
+    let ep = Endpoint::open("c1", &cfg, &Log::discard()).unwrap().0;
+    let s = |x: &str| x.to_string();
+    assert!(ep.write_values(&[(s("MW10:int"), Val::Int(1))]).unwrap()[0].is_none());
+    f.set_silent_writes_n(1);
+    let before = f.lock().write_jobs;
+    let err = ep.write_values(&[(s("MW10:int"), Val::Int(7))]).unwrap_err().to_string();
+    assert!(err.contains("not confirmed"), "{err}");
+    assert_eq!(f.lock().write_jobs - before, 1, "the write must not be sent again");
+    assert_eq!(f.mem(crate::wire::AREA_FLAGS, 0)[10..12], [0, 7], "the PLC did the write");
+    // the next write reconnects and works
+    assert!(ep.write_values(&[(s("MW10:int"), Val::Int(8))]).unwrap()[0].is_none());
+    assert_eq!(f.lock().write_jobs - before, 2);
+}
+
+/// A read is still repeated after a lost answer (it does not change the PLC).
+#[test]
+fn lost_read_answer_is_retried() {
+    let f = FakeCpu::new(480);
+    let addr = f.start();
+    let c = crate::client::Client::new(super::opts(&addr));
+    let item = [crate::wire::Item::bytes(crate::wire::AREA_FLAGS, 0, 0, 2)];
+    c.run(|cn| cn.read(&item)).unwrap();
+    f.set_bad_ref_n(1);
+    assert!(c.run(|cn| cn.read(&item)).is_ok(), "a read reconnects and asks again");
+    assert_eq!(c.reconnects(), 1);
+}
+
+/// An answer with another PDU reference is not the answer to the request.
+#[test]
+fn wrong_pdu_reference_is_rejected() {
+    let (mut cn, f) = super::dial_fake(480);
+    let item = [crate::wire::Item::bytes(crate::wire::AREA_FLAGS, 0, 0, 2)];
+    f.set_bad_ref_n(1);
+    let e = cn.read(&item).unwrap_err();
+    assert!(e.retryable() && e.to_string().contains("PDU reference"), "{e}");
+}
+
+/// After cancel, run fails at once and makes no connection.
+#[test]
+fn cancel_stops_connection_attempts() {
+    let f = FakeCpu::new(480);
+    let addr = f.start();
+    let c = crate::client::Client::new(super::opts(&addr));
+    c.cancel();
+    let conns = f.conns();
+    assert!(c.run(|_| Ok(())).is_err());
+    assert_eq!(f.conns(), conns);
+}

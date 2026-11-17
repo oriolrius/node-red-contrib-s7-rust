@@ -54,6 +54,12 @@ pub struct State {
     pub ignore_writes: bool,
     /// acknowledge but drop the next N write jobs (then works)
     pub ignore_writes_n: usize,
+    /// do the next N write jobs but send no answer (a lost acknowledgement)
+    pub silent_writes_n: usize,
+    /// answer the next N jobs with a wrong PDU reference
+    pub bad_ref_n: usize,
+    /// write jobs received
+    pub write_jobs: usize,
     /// payload size of one Userdata data unit (0 = PDU − 26)
     pub ud_max: usize,
     /// payload size of one upload step (0 = 200)
@@ -106,6 +112,9 @@ impl FakeCpu {
             drop_after: 0,
             ignore_writes: false,
             ignore_writes_n: 0,
+            silent_writes_n: 0,
+            bad_ref_n: 0,
+            write_jobs: 0,
             ud_max: 0,
             upload_chunk: 0,
             szl_id_list: vec![
@@ -207,6 +216,14 @@ impl FakeCpu {
     }
     pub fn set_ignore_writes_n(&self, n: usize) {
         self.lock().ignore_writes_n = n;
+    }
+    /// Does the next N write jobs but sends no answer.
+    pub fn set_silent_writes_n(&self, n: usize) {
+        self.lock().silent_writes_n = n;
+    }
+    /// Answers the next N jobs with the PDU reference of the request + 1.
+    pub fn set_bad_ref_n(&self, n: usize) {
+        self.lock().bad_ref_n = n;
     }
     pub fn set_ud_max(&self, n: usize) {
         self.lock().ud_max = n;
@@ -401,7 +418,10 @@ fn handle(sh: Arc<Shared>, mut conn: TcpStream, first: bool) {
                 reply(0x03, r, &param[..2], &d)
             }
             0x05 => {
-                let d = write_items(&mut sh.st.lock().unwrap(), param, data);
+                let mut s = sh.st.lock().unwrap();
+                s.write_jobs += 1;
+                let d = write_items(&mut s, param, data);
+                drop(s);
                 reply(0x03, r, &param[..2], &d)
             }
             0x1D => {
@@ -480,6 +500,19 @@ fn handle(sh: Arc<Shared>, mut conn: TcpStream, first: bool) {
             }
             _ => continue,
         };
+        let mut out = out;
+        {
+            let mut s = sh.st.lock().unwrap();
+            if param[0] == 0x05 && s.silent_writes_n > 0 {
+                s.silent_writes_n -= 1;
+                continue;
+            }
+            if s.bad_ref_n > 0 && out.len() >= 13 {
+                s.bad_ref_n -= 1;
+                let r = u16::from_be_bytes([out[11], out[12]]).wrapping_add(1);
+                out[11..13].copy_from_slice(&r.to_be_bytes());
+            }
+        }
         if conn.write_all(&out).is_err() {
             return;
         }
