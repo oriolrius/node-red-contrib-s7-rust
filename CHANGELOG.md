@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-17
+
 ### Fixed
 
 - A write is not sent again when its answer does not come. Before, the client reconnected and
@@ -29,6 +31,11 @@ Found by the independent tests of
 [Missel2/s7-compatibility-lab](https://github.com/Missel2/s7-compatibility-lab) (wrong PDU
 reference, lost write acknowledgement, reconnect after flow removal); their tests pass with
 this change.
+
+### Changed
+
+- CI: `cargo audit` ignores RUSTSEC-2026-0543 (`chrono` is unmaintained; informational, no
+  vulnerability) until the move to `jiff` or `time` (#37).
 
 ## [1.4.0] - 2026-11-13
 
@@ -279,7 +286,8 @@ First release: the next generation of `@oriolrius/node-red-contrib-s7`.
 - CI: tests on Node-RED 4 and 5, gitleaks, GitGuardian, RustSec and npm audit, CodeQL,
   OpenSSF Scorecard, Dependabot. License LGPL-3.0-only.
 
-[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.2...v1.3.0
 [1.2.2]: https://github.com/oriolrius/node-red-contrib-s7-rust/compare/v1.2.1...v1.2.2
