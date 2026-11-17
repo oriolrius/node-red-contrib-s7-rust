@@ -13,8 +13,9 @@ All notable changes to this project are documented here. The format follows
   reported success. A second write can overwrite a value that the PLC changed in the meantime
   (for example a command bit that the PLC reset). Now the write fails with an error that starts
   with `not confirmed`. A failure before the request reaches the socket (a dead connection) is
-  still retried. This applies to `s7 write` and the `setClock` / `syncClock` actions of `s7 info`
-  (S7), to writes and alarm acknowledgement (S7CommPlus), and to `Poller::write` of the crate.
+  still retried. This applies to `s7 write`, the `setClock` action and the clock set of
+  `syncClock` (`s7 info`, S7; the clock read of `syncClock` is still retried), to writes and
+  alarm acknowledgement (S7CommPlus), and to `Poller::write` of the crate.
 - An answer with another PDU reference than its request is refused (transport error: the
   client reconnects). Before, it was taken as the answer.
 - When a flow is removed or redeployed, a connection attempt in progress stops at once. Before,

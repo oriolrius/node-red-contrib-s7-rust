@@ -285,7 +285,16 @@ impl Device for S7Dev {
             }
             "syncClock" => {
                 let th = chrono::TimeDelta::milliseconds(arg_u64(a, "thresholdMs").unwrap_or(0) as i64);
-                let (off, synced) = self.run_once(|cn| cn.sync_clock(&Zone::Utc.now(), th, Zone::Local))?;
+                // the read is retried; only the set is not repeated after it was sent
+                let (plc, now) = self.run(|cn| {
+                    let now = Zone::Utc.now();
+                    Ok((cn.read_clock(Zone::Local)?, now))
+                })?;
+                let off = plc.signed_duration_since(now);
+                let synced = !(th > chrono::TimeDelta::zero() && off < th && off > -th);
+                if synced {
+                    self.run_once(|cn| cn.set_clock(&Zone::Utc.now(), Zone::Local))?;
+                }
                 json!({"offsetMs": off.num_milliseconds(), "synced": synced})
             }
             "blocks" => {
